@@ -219,7 +219,7 @@ impl Launcher {
             .h(px(48.))
             .px(px(12.))
             .cursor_text()
-            .font_family(horizon_theme::glass::FONT)
+            .font_family(crate::theme::font())
             .text_size(px(15.))
             .text_color(white(ink::FULL))
             .child(ui::icon("search-01", 20., white(0.55)))

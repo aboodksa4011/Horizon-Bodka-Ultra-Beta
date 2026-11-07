@@ -369,6 +369,8 @@ pub fn command(version: &Value, launch: &Launch) -> Result<Command, String> {
     unpack_natives(version, launch.minecraft, launch.os, launch.natives)?;
     let assets = launch.minecraft.join("assets");
     let game_assets = game_assets(version, launch.minecraft, launch.game_dir)?;
+    crate::branding::initialize_game_language(launch.game_dir)
+        .map_err(|error| error.to_string())?;
     let path = |p: &Path| p.to_string_lossy().into_owned();
     let p = launch.player;
     let vars: HashMap<&str, String> = HashMap::from([

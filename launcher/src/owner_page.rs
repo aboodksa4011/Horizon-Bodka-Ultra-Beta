@@ -8,8 +8,8 @@ impl Launcher {
     /// Whether the screen covers the window: no owner, and either Play was refused or the player
     /// hasn't read it yet. The data question comes first.
     pub(crate) fn asking_owner(&self) -> bool {
-        (self.owner_shown() == Some(false) || sign_in_preview())
-            && (self.owner_screen_open || !self.settings.owner_notice_seen || sign_in_preview())
+        (self.owner == Some(false) || sign_in_preview())
+            && (self.owner_screen_open || sign_in_preview())
             && !self.asking_consent()
             && self.opening.is_none()
     }
@@ -262,7 +262,7 @@ impl Launcher {
             .child(
                 div()
                     .mt(px(8.))
-                    .font_family(horizon_theme::glass::DISPLAY_FONT)
+                    .font_family(crate::theme::font())
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(px(28.))
                     .line_height(px(35.))
@@ -365,7 +365,7 @@ impl Launcher {
                         .bg(gpui::white())
                         .cursor_pointer()
                         .hover(|s| s.opacity(0.9))
-                        .font_family(horizon_theme::glass::FONT)
+                        .font_family(crate::theme::font())
                         .text_size(px(15.))
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(gpui::rgb(horizon_theme::glass::ON_LIGHT))

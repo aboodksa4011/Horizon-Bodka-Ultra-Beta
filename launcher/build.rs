@@ -8,6 +8,8 @@ fn main() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         let mut resource = winresource::WindowsResource::new();
         resource.set_icon(&ico);
+        resource.set("ProductName", "𝓗𝓸𝓻𝓲𝔃𝓸𝓷 𝓑𝓸𝓭𝓴𝓪 𝓤𝓵𝓽𝓻𝓪");
+        resource.set("FileDescription", "مشغّل هورايزن بودكا ألترا");
         if let Err(e) = resource.compile() {
             panic!("embedding {ico}: {e}");
         }

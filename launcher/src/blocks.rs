@@ -13,6 +13,12 @@ pub struct Assets;
 
 impl gpui::AssetSource for Assets {
     fn load(&self, path: &str) -> gpui::Result<Option<Cow<'static, [u8]>>> {
+        if path == "bodka/helicopter-clean.png" {
+            return Ok(Some(Cow::Borrowed(include_bytes!("../assets/bodka/helicopter-clean.png"))));
+        }
+        if path == "bodka/helicopter.webp" {
+            return Ok(Some(Cow::Borrowed(include_bytes!("../assets/bodka/helicopter.webp"))));
+        }
         if let Some(name) = path
             .strip_prefix("icons/glass/")
             .and_then(|p| p.strip_suffix(".svg"))
@@ -50,7 +56,7 @@ pub fn icon(name: &'static str, size: f32, color: Hsla) -> Svg {
 /// Text in the pixel face: headings, navigation, buttons, badges.
 pub fn pixel(size: f32, weight: FontWeight) -> Div {
     div()
-        .font_family(theme::PIXEL)
+        .font_family(crate::theme::font())
         .font_weight(weight)
         .text_size(px(size))
         .line_height(px((size * 1.2).round()))

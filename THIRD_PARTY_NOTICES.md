@@ -212,3 +212,11 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
+# BODKA: GPUI Fast Windows
+
+`third_party/gpui-fast-windows` vendors the crates.io release 0.1.13 of
+[GPUI Fast](https://github.com/longbridge/gpui-fast), Apache-2.0.
+Copyright 2022–2025 Zed Industries, Inc.; Copyright 2026 Longbridge.
+The license is retained in that directory. BODKA modifies `src/direct_write.rs`
+to preserve right-to-left glyph positions and mixed-script text indices.
+See `third_party/gpui-fast-windows/BODKA-PATCH.md` for the changes.

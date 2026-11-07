@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="324" viewBox="0 0 1280 324" role="img" aria-labelledby="title desc">
+  <title id="title">Horizon Bodka Ultra · Beta 01</title>
+  <desc id="desc">غلاف النسخة التجريبية الأولى لمشغّل BODKA على ويندوز x64، بالأسود والبرونزي.</desc>
+  <defs>
+    <linearGradient id="base" x2="1" y2=".6" gradientUnits="objectBoundingBox"><stop stop-color="#0e0c0b"/><stop offset=".52" stop-color="#211915"/><stop offset="1" stop-color="#403025"/></linearGradient>
+    <linearGradient id="metal" x2="0" y2="1"><stop stop-color="#f5d4aa"/><stop offset="1" stop-color="#af8059"/></linearGradient>
+    <pattern id="grid" width="42" height="42" patternUnits="userSpaceOnUse"><path d="M42 0H0v42" fill="none" stroke="#f8e5ce" stroke-opacity=".055"/></pattern>
+    <g id="cube"><path d="m0 0 32-16L64 0 32 16z" fill="#b08765"/><path d="m0 0 32 16v30L0 30z" fill="#79573e"/><path d="M64 0 32 16v30l32-16z" fill="#46382e"/></g>
+  </defs>
+  <rect width="1280" height="324" fill="url(#base)"/><rect width="1280" height="324" fill="url(#grid)"/>
+  <path d="M0 24h507m32 0h83m14 0h16" stroke="#ab835f" opacity=".53"/>
+  <g transform="translate(73 0)" font-family="Segoe UI,Arial,sans-serif">
+    <text x="3" y="83" fill="#d0ac8b" font-weight="600" font-size="16" letter-spacing="8">HORIZON</text>
+    <text x="-3" y="198" font-weight="800" font-size="122" letter-spacing="-5" fill="url(#metal)">BODKA</text>
+    <text x="419" y="198" font-size="57" font-style="italic" font-family="Georgia,serif" fill="#f4eade">Ultra</text>
+    <path d="M3 224h500" stroke="#b68d69" opacity=".58"/>
+    <text x="3" y="263" fill="#f4eade" font-size="18" letter-spacing="2.5">WINDOWS x64</text>
+    <path d="M185 246v20" stroke="#a77b52"/>
+    <text x="206" y="263" fill="#d9b18c" font-size="18" letter-spacing="3.2">BETA 01</text>
+  </g>
+  <g transform="translate(730 50)">
+    <g opacity=".4" fill="none" stroke="#b48b63"><path d="m-25 221 221-110 280 140m-428 0 174-87 174 87m-10-99 95-48 84 42"/><path d="m128 253 125-62 125 62"/></g>
+    <g transform="translate(35 110)"><use href="#cube" x="0" y="60"/><use href="#cube" x="64" y="60"/><use href="#cube" x="32" y="44"/><use href="#cube" x="96" y="44"/><use href="#cube" x="64" y="28"/><use href="#cube" x="96" y="14"/></g>
+    <g transform="translate(242 135)"><use href="#cube" x="0" y="40"/><use href="#cube" x="64" y="40"/><use href="#cube" x="32" y="24"/><use href="#cube" x="96" y="24"/><use href="#cube" x="64" y="8"/><use href="#cube" x="64" y="-22"/></g>
+    <g transform="translate(405 93)"><use href="#cube" x="0" y="40"/><use href="#cube" x="32" y="24"/><use href="#cube" x="32" y="-6"/></g>
+  </g>
+  <path d="M0 322h1280" stroke="#a77b52" stroke-width="4"/>
+</svg>

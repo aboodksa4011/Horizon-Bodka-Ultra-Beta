@@ -46,7 +46,9 @@ impl Launcher {
             ),
             Player::GameName => (
                 None,
-                self.offline_name.clone().unwrap_or_else(|| "Player".into()),
+                self.offline_name
+                    .clone()
+                    .unwrap_or_else(|| tr("Player").into()),
                 (Tone::Off, tr("Offline · single player and LAN worlds")),
             ),
         };
@@ -67,7 +69,7 @@ impl Launcher {
                 .gap(px(10.))
                 .child(
                     div()
-                        .font_family(horizon_theme::glass::DISPLAY_FONT)
+                        .font_family(crate::theme::font())
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_size(px(32.))
                         .line_height(px(32.))
@@ -300,7 +302,7 @@ impl Launcher {
                         .when(ui::light(), |d| d.border_1().border_color(ui::white(0.15)))
                         .cursor_pointer()
                         .hover(|s| s.opacity(0.9))
-                        .font_family(horizon_theme::glass::FONT)
+                        .font_family(crate::theme::font())
                         .text_size(px(15.))
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(gpui::rgb(0x100a1f))
@@ -330,7 +332,7 @@ impl Launcher {
             .child(
                 div()
                     .mt(px(20.))
-                    .font_family(horizon_theme::glass::DISPLAY_FONT)
+                    .font_family(crate::theme::font())
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(px(22.))
                     .line_height(px(27.5))

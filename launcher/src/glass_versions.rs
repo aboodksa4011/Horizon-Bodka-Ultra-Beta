@@ -330,7 +330,7 @@ impl Launcher {
         }
         let b = ui::quiet(
             SharedString::from(format!("install-{tag}")),
-            tr("Install"),
+            tr("Download and install"),
             36.,
             &t,
         );
@@ -338,10 +338,21 @@ impl Launcher {
             b.opacity(0.4).cursor_default().into_any_element()
         } else {
             let release = release.clone();
-            b.on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+            let chosen=release.clone();
+            let selected=self.settings.bodka.selected_candidate.as_deref()==Some(release.tag.as_str());
+            div().flex().flex_wrap().gap(px(8.))
+            .child(ui::quiet(SharedString::from(format!("select-{}",release.tag)),if selected {tr("Selected")}else{tr("Select version")},36.,&t)
+                .on_click(cx.listener(move |this, _: &ClickEvent,_,cx| {
+                    this.settings.bodka.selected_candidate=Some(chosen.tag.clone());
+                    crate::sound::play(crate::sound::Event::Version);
+                    this.save_settings();
+                    if this.settings.bodka.download_on_select {this.install(&chosen);}
+                    cx.notify();
+                })))
+            .child(b.on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                 this.install(&release);
                 cx.notify();
-            }))
+            })))
             .into_any_element()
         }
     }
@@ -405,6 +416,7 @@ impl Launcher {
                 ui::quiet(SharedString::from(format!("use-{tag}")), tr("Use"), 36., &t).on_click(
                     cx.listener(move |this, _: &ClickEvent, _, cx| {
                         this.settings.selected = Some(t1.clone());
+                        crate::sound::play(crate::sound::Event::Version);
                         this.save_settings();
                         cx.notify();
                     }),

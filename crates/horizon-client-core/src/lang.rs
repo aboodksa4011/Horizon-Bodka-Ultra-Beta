@@ -671,6 +671,29 @@ mod tests {
     }
 
     #[test]
+    fn arabic_bundle_covers_every_english_key_without_resource_files() {
+        let english: HashMap<String, String> = serde_json::from_str(include_str!(
+            "../../horizon-client/assets/horizon/lang/en_us.json"
+        ))
+        .unwrap();
+        let arabic: HashMap<String, String> = serde_json::from_str(include_str!(
+            "../../horizon-client/assets/horizon/lang/ar_sa.json"
+        ))
+        .unwrap();
+        for key in english.keys() {
+            assert!(
+                arabic
+                    .get(key)
+                    .is_some_and(|value| !value.trim().is_empty()),
+                "Missing Arabic translation: {key}"
+            );
+        }
+        let language = Language::load(&[], "ar_sa");
+        assert_eq!(language.get("horizon.mods.browse.install"), Some("تثبيت"));
+        assert_eq!(language.get("horizon.pvp.hud_fps"), Some("معدل الإطارات"));
+    }
+
+    #[test]
     fn a_scoped_language_is_the_calling_threads_and_reports_what_it_lacks() {
         let empty = Mem(HashMap::new());
         let outside = code();

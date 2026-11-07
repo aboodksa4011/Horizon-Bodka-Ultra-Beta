@@ -2244,8 +2244,6 @@ dependencies = [
 [[package]]
 name = "gpui-fast-windows"
 version = "0.1.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "088654835f1408e1aaa79afcc316530461a14fa1c4e543d47b1881b6ced63f19"
 dependencies = [
  "accesskit",
  "accesskit_windows",
@@ -2263,7 +2261,9 @@ dependencies = [
  "parking_lot",
  "rand 0.9.5",
  "raw-window-handle",
+ "serde_json",
  "smallvec",
+ "unicode-bidi",
  "uuid",
  "windows 0.62.2",
  "windows-core 0.62.2",
@@ -2731,6 +2731,7 @@ dependencies = [
  "syn 2.0.119",
  "sys-locale",
  "tar",
+ "tempfile",
  "toml 1.1.8+spec-1.1.0",
  "trash",
  "ureq",

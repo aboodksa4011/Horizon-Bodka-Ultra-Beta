@@ -276,7 +276,7 @@ impl Launcher {
                 .bg(white(if open { 0.11 } else { 0.07 }))
                 .hover(|s| s.bg(white(0.11)))
                 .cursor_pointer()
-                .font_family(horizon_theme::glass::FONT)
+                .font_family(crate::theme::font())
                 .text_size(px(14.))
                 .text_color(white(ink::FULL))
                 .child(trf("Sort by: {order}", &[("order", tr(name))]))
@@ -637,7 +637,7 @@ impl Launcher {
                 .child(
                     div()
                         .mt(px(20.))
-                        .font_family(horizon_theme::glass::DISPLAY_FONT)
+                        .font_family(crate::theme::font())
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_size(px(24.))
                         .line_height(px(30.))
@@ -723,7 +723,7 @@ fn small_tab(id: SharedString, open: bool, t: &theme::Theme) -> Stateful<Div> {
             .px(px(12.))
             .rounded(px(10.))
             .cursor_pointer()
-            .font_family(horizon_theme::glass::FONT)
+            .font_family(crate::theme::font())
             .text_size(px(13.))
             .when(open, |d| {
                 d.bg(white(0.12))

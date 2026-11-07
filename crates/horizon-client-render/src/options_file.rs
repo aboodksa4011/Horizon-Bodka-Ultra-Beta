@@ -198,7 +198,7 @@ static TABLE: LazyLock<Vec<Def>> = LazyLock::new(|| {
         def("resourcePacks", List, V::List(Vec::new())),
         def("incompatibleResourcePacks", List, V::List(Vec::new())),
         def("lastServer", PS, V::Str(String::new())),
-        def("lang", PS, V::Str("en_us".into())),
+        def("lang", PS, V::Str("ar_sa".into())),
         id("chatVisibility", 3, 0),
         u("chatOpacity", 1.0),
         u("chatLineSpacing", 0.0),

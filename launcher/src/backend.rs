@@ -928,7 +928,7 @@ pub fn data_dir() -> PathBuf {
     }
     dirs::data_dir()
         .unwrap_or_else(std::env::temp_dir)
-        .join("horizon-launcher")
+        .join(crate::branding::APP_ID)
 }
 
 /// A canonical path without Windows' verbatim prefix: `canonicalize` gives `\\?\C:\...` there,
@@ -1121,6 +1121,7 @@ pub(crate) fn download(
     to: &Path,
     progress: &impl Fn(f32),
 ) -> Result<(), String> {
+    if crate::downloads::active() {return crate::downloads::download(url,size,sha256,to);}
     let response = get(url)?;
     let size = match size {
         0 => response
@@ -1288,6 +1289,7 @@ pub(crate) fn install_as(
     let archive = partial.join("download");
     download(&url, size, sha256, &archive, &progress)?;
     let unpacked = partial.join("unpacked");
+    crate::downloads::stage(crate::downloads::State::Installing);
     unpack(&archive, &url, &unpacked)?;
     progress(0.97);
     // The archives hold one top folder (horizon-linux-x86_64/...); the version folder is its contents.
@@ -2100,17 +2102,18 @@ pub fn download_version_for_owner(
     manifest_sha1: &str,
     log: &dyn Fn(String),
 ) -> Result<PathBuf, String> {
+    fetch_version_for_owner(id, manifest_sha1, &get_bytes, log)
+}
+
+fn fetch_version_for_owner(
+    id: &str,
+    manifest_sha1: &str,
+    fetch: sources::Fetch,
+    log: &dyn Fn(String),
+) -> Result<PathBuf, String> {
     let dir = data_dir().join("minecraft");
-    let fetch = |url: &str| -> Result<Vec<u8>, String> {
-        let mut body = Vec::new();
-        get(url)?
-            .into_reader()
-            .read_to_end(&mut body)
-            .map_err(|e| e.to_string())?;
-        Ok(body)
-    };
     let pins = sources::Pins::for_version(id, manifest_sha1);
-    download_for_owner(&pins, &dir, &fetch, log)
+    download_for_owner(&pins, &dir, fetch, log)
         .map_err(|e| e.trim_start_matches("\n  • ").to_string())?;
     Ok(dir)
 }
@@ -2125,6 +2128,26 @@ pub fn java_game(
     server: Option<&str>,
     log: &dyn Fn(String),
 ) -> Result<Command, String> {
+    prepare_java_game(instance, server, false, log)
+}
+
+/// Recheck the managed copy, including files for its loader. Never spawn the game.
+pub fn repair_java(
+    instance: &crate::instances::Instance,
+    log: &dyn Fn(String),
+) -> Result<(), String> {
+    prepare_java_game(instance, None, true, log)?;
+    crate::dual::repair_mods(&instance.home)
+}
+
+fn prepare_java_game(
+    instance: &crate::instances::Instance,
+    server: Option<&str>,
+    repair: bool,
+    log: &dyn Fn(String),
+) -> Result<Command, String> {
+    static PREPARATION: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _guard = PREPARATION.lock().map_err(|e| e.to_string())?;
     let game = instance.java.as_ref().ok_or_else(|| {
         format!(
             "{} plays Horizon, not Minecraft: Java Edition",
@@ -2143,10 +2166,29 @@ pub fn java_game(
             .join(".downloaded"))
     };
     let marker = downloaded(&game.minecraft)?;
-    if !marker.is_file() {
+    let version_dir = minecraft.join("versions").join(&id);
+    if repair
+        || !marker.is_file()
+        || !version_dir
+            .join(format!("{}.jar", game.minecraft))
+            .is_file()
+        || !version_dir
+            .join(format!("{}.json", game.minecraft))
+            .is_file()
+    {
         let listed = crate::minecraft_versions::load()?;
         let version = listed.find(&game.minecraft)?;
-        download_version_for_owner(&version.id, &version.sha1, log)?;
+        let source = crate::dual::source_for(instance);
+        let cache = std::sync::OnceLock::new();
+        let fetch = |url: &str| {
+            let local = source.as_ref().and_then(|p| {
+                cache
+                    .get_or_init(|| mojang::LocalFiles::open(p, version))
+                    .bytes(url)
+            });
+            local.map_or_else(|| get_bytes(url), Ok)
+        };
+        fetch_version_for_owner(&version.id, &version.sha1, &fetch, log)?;
         fs::write(&marker, "").map_err(|e| format!("{}: {e}", marker.display()))?;
     }
     // The Java the game needs, which also runs a loader's installer.
@@ -2175,7 +2217,7 @@ pub fn java_game(
     if let Some(loader) = &game.loader {
         start = loader.kind.profile_id(&loader.version, &game.minecraft);
         let marker = downloaded(&start)?;
-        if !marker.is_file() {
+        if repair || !marker.is_file() {
             start = crate::loaders::install(
                 loader,
                 &game.minecraft,
@@ -2227,8 +2269,9 @@ fn download_for(
             ..
         }) => {
             let name = owner.name;
-            log(format!(
-                "{name} owns Minecraft: downloading {v} from Mojang"
+            log(crate::i18n::trf(
+                "{name} owns Minecraft: downloading {version} from Mojang",
+                &[("name", &name), ("version", v)],
             ));
             let os = match sources::Os::current() {
                 sources::Os::Linux => "linux",
@@ -2236,22 +2279,26 @@ fn download_for(
                 sources::Os::Windows => "windows",
             };
             mojang::download(pins, dir, os, 8, fetch, &mojang::CANCEL, log).map_err(|e| {
-                format!("\n  • Horizon tried to download {v} from Mojang for {name}, but: {e}")
+                crate::i18n::trf(
+                    "\n  • Horizon tried to download {version} from Mojang for {name}, but: {error}",
+                    &[("version", v), ("name", &name), ("error", &e)],
+                )
             })
         }
         // An owner by its last answer, who can't be asked now.
-        Ok(pass) => Err(format!(
-            "\n  • Downloading {v} from Mojang needs your Microsoft account, which could not be \
-             checked: {}",
-            pass.offline.unwrap_or_default()
+        Ok(pass) => Err(crate::i18n::trf(
+            "\n  • Downloading {version} from Mojang needs your Microsoft account, which could not be \
+             checked: {error}",
+            &[("version", v), ("error", &pass.offline.unwrap_or_default())],
         )),
         Err(_) if signed_in => Err(
-            "\n  • No signed-in account owns Minecraft: Java Edition, so Horizon can't download it."
+            crate::i18n::tr("\n  • No signed-in account owns Minecraft: Java Edition, so Horizon can't download it.")
                 .into(),
         ),
-        Err(_) => Err(format!(
+        Err(_) => Err(crate::i18n::trf(
             "\n  • Or sign in with the Microsoft account that owns Minecraft: Horizon then \
-             downloads {v} from Mojang itself."
+             downloads {version} from Mojang itself.",
+            &[("version", v)],
         )),
     }
 }
@@ -2628,7 +2675,7 @@ pub fn game_home() -> PathBuf {
     }
     dirs::data_dir()
         .unwrap_or_else(std::env::temp_dir)
-        .join("horizon")
+        .join("bodka-horizon-ultra-game")
 }
 
 /// Whether No AI is on: every AI feature hidden and off (`horizon_core::no_ai`, kept in the
@@ -2884,6 +2931,15 @@ fn strip_launcher_render_env(cmd: &mut Command) {
 pub fn client_command(tag: &str) -> Command {
     let home = game_home();
     let _ = fs::create_dir_all(&home);
+    if let Err(error) = crate::branding::initialize_game_language(&home) {
+        eprintln!(
+            "{}",
+            crate::i18n::trf(
+                "Could not initialize the game's language: {error}",
+                &[("error", &error.to_string())]
+            )
+        );
+    }
     let mut cmd = Command::new(client_program(tag));
     #[cfg(windows)]
     crate::windows_runtime::mark(&mut cmd, &version_dir(tag));
@@ -3461,7 +3517,9 @@ fn launcher_asset_running_from(appimage: bool) -> Option<&'static str> {
 
 /// Development builds and `HORIZON_LAUNCHER_NO_SELF_UPDATE` never replace themselves.
 pub fn self_update_allowed() -> bool {
-    !cfg!(debug_assertions) && std::env::var_os("HORIZON_LAUNCHER_NO_SELF_UPDATE").is_none()
+    crate::branding::UPSTREAM_SELF_UPDATE
+        && !cfg!(debug_assertions)
+        && std::env::var_os("HORIZON_LAUNCHER_NO_SELF_UPDATE").is_none()
 }
 
 /// The version in `horizon-launcher --version`'s output (`horizon-launcher 0.1.5`).
@@ -3780,7 +3838,7 @@ fn process_alive(pid: u32) -> bool {
     }
 }
 
-fn file_sha256(path: &Path) -> Result<String, String> {
+pub(crate) fn file_sha256(path: &Path) -> Result<String, String> {
     let mut file = fs::File::open(path).map_err(|e| e.to_string())?;
     let mut hash = horizon_release_sign::Sha256::default();
     let mut buf = vec![0u8; 1 << 16];
@@ -4115,6 +4173,13 @@ pub enum Job {
 }
 
 pub enum Msg {
+    DualFound(u64, Vec<crate::dual::Entry>),
+    DualScanned(u64, crate::dual::Summary),
+    DualBindings(u64, Vec<(crate::dual::Origin, String)>),
+    DualImported(crate::dual::Origin, Result<String,String>),
+    DualRepairLine(String),
+    DualRepaired(Result<(),String>),
+    Transfer(Box<crate::downloads::Transfer>),
     Releases(Result<Vec<Release>, String>),
     Links(Links),
     Progress(String, f32),
@@ -4319,8 +4384,10 @@ impl WhilePlaying {
     }
 }
 
-#[derive(Default, serde::Serialize, serde::Deserialize)]
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Settings {
+    #[serde(default)]
+    pub bodka: crate::bodka_settings::Settings,
     pub selected: Option<String>,
     /// Game asset architecture. Auto preserves the launcher's process-architecture behavior.
     #[serde(default)]
@@ -4378,8 +4445,8 @@ pub struct Settings {
     /// What the window does while the game runs. Stays by default.
     #[serde(default)]
     pub while_playing: WhilePlaying,
-    /// The accent colour on top of the appearance (`themes::Accent`). Horizon's violet by default.
-    #[serde(default)]
+    /// BODKA's emerald accent; existing explicitly selected accents are retained.
+    #[serde(default = "crate::branding::default_accent")]
     pub accent: crate::themes::Accent,
     /// How much white the glass look's plates take, in percent (the mockup's Glass, 0 to 16).
     /// Unset is the mockup's 6.
@@ -4401,8 +4468,8 @@ pub struct Settings {
     /// (`themes::keep_background`). Unset shows Horizon's landscape.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background: Option<String>,
-    /// The window's language. Unset follows the system's (`i18n::Language::system`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// New settings use Arabic. Explicit null follows the system; keep it when saving.
+    #[serde(default = "crate::branding::default_language")]
     pub language: Option<crate::i18n::Language>,
     /// Whether what the browser installed from Horizon's registry updates by itself, at start
     /// and before Play (`browser::horizon::auto`). Unset is on.
@@ -4429,6 +4496,45 @@ pub struct Settings {
     /// comes from the player's own install. Off by default, and absent from the file while off.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub dev_offline: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            bodka: Default::default(),
+            selected: Default::default(),
+            game_architecture: Default::default(),
+            instance: Default::default(),
+            minecraft_dir: Default::default(),
+            server_dir: Default::default(),
+            install_new_versions: Default::default(),
+            prune_old_versions: Default::default(),
+            keep_versions: Default::default(),
+            skip_opening: Default::default(),
+            desktop_entry: Default::default(),
+            game_args: Default::default(),
+            proxy: Default::default(),
+            appearance: Default::default(),
+            ping_notice_seen: Default::default(),
+            owner_notice_seen: Default::default(),
+            partner_seen_secs: Default::default(),
+            partner_hidden: Default::default(),
+            while_playing: Default::default(),
+            accent: crate::branding::default_accent(),
+            glass: Default::default(),
+            blur: Default::default(),
+            theme: Default::default(),
+            performance: Default::default(),
+            background: Default::default(),
+            language: crate::branding::default_language(),
+            mods_auto_update: Default::default(),
+            native_mods_noticed: Default::default(),
+            native_profile: Default::default(),
+            native_cache_gib: Default::default(),
+            native_release: Default::default(),
+            dev_offline: Default::default(),
+        }
+    }
 }
 
 impl Settings {
@@ -4470,7 +4576,7 @@ impl Settings {
                     fields.remove(key);
                 }
             }
-            // A language this launcher doesn't have yet follows the system's.
+            // An unknown language falls back to this distribution's Arabic default.
             if fields.get("language").is_some_and(|l| {
                 serde_json::from_value::<Option<crate::i18n::Language>>(l.clone()).is_err()
             }) {
@@ -5510,15 +5616,26 @@ pub fn {f}("
     }
 
     #[test]
-    fn the_language_follows_the_system_unless_picked() {
+    fn arabic_is_default_and_explicit_language_choices_survive_a_save() {
         use crate::i18n::Language;
-        assert_eq!(Settings::parse("{}").language, None);
+        assert_eq!(Settings::parse("{}").language(), Language::Arabic);
+        assert_eq!(Settings::parse("").language(), Language::Arabic);
+        assert_eq!(Settings::default().language(), Language::Arabic);
         let fr = Settings::parse(r#"{"language": "fr"}"#);
         assert_eq!(fr.language(), Language::French);
         let future = Settings::parse(r#"{"language": "tlh", "game_args": "--x"}"#);
-        assert_eq!((future.language, future.game_args.as_str()), (None, "--x"));
+        assert_eq!(
+            (future.language(), future.game_args.as_str()),
+            (Language::Arabic, "--x")
+        );
         let saved = serde_json::to_value(Settings::default()).unwrap();
-        assert!(saved.get("language").is_none(), "unset is left out");
+        assert_eq!(saved["language"], "ar");
+        let system = Settings::parse(r#"{"language": null, "selected": "v1"}"#);
+        let saved = serde_json::to_string(&system).unwrap();
+        let restored = Settings::parse(&saved);
+        assert_eq!(restored.language, None);
+        assert_eq!(restored.selected.as_deref(), Some("v1"));
+        assert_eq!(restored.language(), Language::system());
     }
 
     #[test]
@@ -5542,9 +5659,9 @@ pub fn {f}("
     }
 
     #[test]
-    fn the_accent_is_violet_unless_picked_and_an_unknown_one_keeps_the_rest() {
+    fn the_accent_is_bronze_unless_picked_and_an_unknown_one_keeps_the_rest() {
         use crate::themes::Accent;
-        assert_eq!(Settings::parse("{}").accent, Accent::VIOLET);
+        assert_eq!(Settings::parse("{}").accent.rgb(), 0xa77b52);
         let teal =
             Settings::parse(r#"{"accent": "teal", "background": "background-0123456789ab.png"}"#);
         assert_eq!(
@@ -5553,8 +5670,8 @@ pub fn {f}("
         );
         let future = Settings::parse(r#"{"accent": "plaid", "game_args": "--x"}"#);
         assert_eq!(
-            (future.accent, future.game_args.as_str()),
-            (Accent::VIOLET, "--x")
+            (future.accent.rgb(), future.game_args.as_str()),
+            (0xa77b52, "--x")
         );
     }
 

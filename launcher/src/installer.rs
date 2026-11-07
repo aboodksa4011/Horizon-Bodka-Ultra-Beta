@@ -20,12 +20,14 @@ use std::path::{Path, PathBuf};
 use winreg::enums::{HKEY_CURRENT_USER, KEY_READ, KEY_WRITE};
 use winreg::RegKey;
 
-pub const APP_NAME: &str = "Horizon Launcher";
+pub const APP_NAME: &str = crate::branding::APP_NAME;
+const INSTALL_FOLDER: &str = crate::branding::INSTALL_FOLDER;
 const BINARY: &str = "horizon-launcher.exe";
-const PUBLISHER: &str = "Horizon";
+const PUBLISHER: &str = "BODKA — based on Horizon (MIT)";
 const ABOUT_URL: &str = "https://playhorizon.dev";
-const UNINSTALL_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\HorizonLauncher";
-const OWN_KEY: &str = r"Software\Horizon\Launcher";
+const UNINSTALL_KEY: &str =
+    r"Software\Microsoft\Windows\CurrentVersion\Uninstall\BodkaHorizonUltra";
+const OWN_KEY: &str = r"Software\BodkaHorizonUltra\Launcher";
 const ASIDE_PREFIX: &str = "horizon-launcher-uninstall-";
 
 pub use crate::setup_args::Mode;
@@ -112,7 +114,7 @@ pub fn default_dir() -> PathBuf {
     dirs::data_local_dir()
         .unwrap_or_else(std::env::temp_dir)
         .join("Programs")
-        .join(APP_NAME)
+        .join(INSTALL_FOLDER)
 }
 
 /// The install folder for a folder the player picked: always one called "Horizon Launcher", so
@@ -120,11 +122,11 @@ pub fn default_dir() -> PathBuf {
 pub fn folder_for(chosen: &Path) -> PathBuf {
     if chosen
         .file_name()
-        .is_some_and(|n| n.eq_ignore_ascii_case(APP_NAME))
+        .is_some_and(|n| n.eq_ignore_ascii_case(INSTALL_FOLDER))
     {
         chosen.to_path_buf()
     } else {
-        chosen.join(APP_NAME)
+        chosen.join(INSTALL_FOLDER)
     }
 }
 
@@ -456,14 +458,14 @@ pub fn uninstall(remove_data: bool, progress: impl Fn(Step, f32)) -> Result<Vec<
             Err(e) => left.push(format!(r"HKCU\{key}: {e}")),
         }
     }
-    // `Software\Horizon` goes only when nothing else (the game) keeps anything in it.
-    if let Ok(parent) = hkcu.open_subkey_with_flags(r"Software\Horizon", KEY_READ) {
+    // `Software\BodkaHorizonUltra` goes only when nothing else (the game) keeps anything in it.
+    if let Ok(parent) = hkcu.open_subkey_with_flags(r"Software\BodkaHorizonUltra", KEY_READ) {
         let empty = parent
             .query_info()
             .is_ok_and(|info| info.sub_keys == 0 && info.values == 0);
         drop(parent);
         if empty {
-            let _ = hkcu.delete_subkey(r"Software\Horizon");
+            let _ = hkcu.delete_subkey(r"Software\BodkaHorizonUltra");
         }
     }
 
@@ -588,11 +590,11 @@ mod tests {
     fn the_install_folder_is_always_ours() {
         assert_eq!(
             folder_for(Path::new(r"C:\Games")),
-            PathBuf::from(r"C:\Games\Horizon Launcher")
+            PathBuf::from(r"C:\Games\BODKA Horizon Ultra")
         );
         assert_eq!(
-            folder_for(Path::new(r"C:\Games\horizon launcher")),
-            PathBuf::from(r"C:\Games\horizon launcher")
+            folder_for(Path::new(r"C:\Games\bodka horizon ultra")),
+            PathBuf::from(r"C:\Games\bodka horizon ultra")
         );
     }
 

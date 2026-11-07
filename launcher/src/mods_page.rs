@@ -965,7 +965,7 @@ impl Launcher {
                 .border_0()
                 .rounded(px(12.))
                 .bg(crate::glass_ui::white(if focused { 0.11 } else { 0.07 }))
-                .font_family(horizon_theme::glass::FONT)
+                .font_family(crate::theme::font())
                 .text_size(px(14.))
         } else {
             field

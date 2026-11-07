@@ -51,7 +51,8 @@ impl Launcher {
             self.settings.accent,
             window.appearance(),
         )
-        .with_glass(self.settings.glass_tint(), self.settings.glass_blur());
+        .with_glass(self.settings.glass_tint(), self.settings.glass_blur())
+        .with_bodka(self.settings.bodka.theme);
         match themes::theme(self.settings.theme.as_deref()) {
             Some(picked) => theme.with_sky(picked.sky),
             None => theme,

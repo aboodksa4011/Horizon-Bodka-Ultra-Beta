@@ -43,8 +43,8 @@ pub fn label(version: &str) -> Option<String> {
     date_of(version)?;
     let commit = version.strip_prefix("nightly-")?.get(11..);
     Some(match commit {
-        Some(commit) if !commit.is_empty() => format!("Nightly · {commit}"),
-        _ => "Nightly".to_owned(),
+        Some(commit) if !commit.is_empty() => format!("{} · {commit}", crate::i18n::tr("Nightly")),
+        _ => crate::i18n::tr("Nightly").to_owned(),
     })
 }
 

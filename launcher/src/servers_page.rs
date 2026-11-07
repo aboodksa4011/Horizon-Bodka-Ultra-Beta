@@ -3029,7 +3029,9 @@ impl Launcher {
         } else if worlds.is_empty() {
             text(theme::CAPTION)
                 .text_color(t.muted)
-                .child("You have no single-player world yet: play one first, or choose New world.")
+                .child(tr(
+                    "You have no single-player world yet: play one first, or choose New world.",
+                ))
                 .into_any_element()
         } else {
             let mut list = div().flex().flex_col().gap(px(2.));
@@ -3069,11 +3071,9 @@ impl Launcher {
                 .flex_col()
                 .gap(px(6.))
                 .child(list)
-                .child(
-                    text(theme::CAPTION)
-                        .text_color(t.muted)
-                        .child("The server gets a copy: your single-player world stays as it is."),
-                )
+                .child(text(theme::CAPTION).text_color(t.muted).child(tr(
+                    "The server gets a copy: your single-player world stays as it is.",
+                )))
                 .into_any_element()
         };
         let modes = segments("create-mode", &MODES, mode, &t, pick(|c, v| c.mode = v));
@@ -3152,7 +3152,7 @@ impl Launcher {
             .child(
                 text(theme::UI)
                     .text_color(if eula_missing { t.danger } else { t.ink })
-                    .child("I agree to the Minecraft EULA"),
+                    .child(tr("I agree to the Minecraft EULA")),
             )
             .child(
                 div()
@@ -3161,7 +3161,7 @@ impl Launcher {
                     .text_color(t.accent)
                     .cursor_pointer()
                     .hover(|s| s.opacity(0.8))
-                    .child("Read it")
+                    .child(tr("Read it"))
                     .on_click(|_, _, cx| cx.open_url(servers::EULA_URL)),
             );
         let body = div()
@@ -3178,7 +3178,7 @@ impl Launcher {
             .child(
                 text(theme::HEADING)
                     .text_color(t.ink)
-                    .child("Create a server"),
+                    .child(tr("Create a server")),
             )
             .child(text(theme::CAPTION).text_color(t.muted).child(
                 "Everything has a default: tick the EULA and Create makes a friends-only survival \
@@ -3271,7 +3271,7 @@ impl Launcher {
                 text(theme::CAPTION)
                     .flex_1()
                     .text_color(t.danger)
-                    .child("Tick the EULA box to create the server."),
+                    .child(tr("Tick the EULA box to create the server.")),
             );
         }
         let cancel = button("create-cancel", "Cancel", Kind::Secondary, &t);

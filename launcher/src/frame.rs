@@ -1,6 +1,6 @@
 //! The glass look's frame (the mockup's `launcher-app.tsx`): the sidebar plate with the
 //! instances, the launcher's update, Sculk's card, Discord and the links; the top bar with the
-//! pages in a glass tab strip, the player, Microsoft sign-in and Settings; and the menus they open.
+//! pages in a glass tab strip, the player, active downloads and Settings; and their menus.
 //! Dark appearance only for now (`docs/design-system.md`, "Glass").
 use super::*;
 use crate::glass_ui::{self as ui, white, Tone};
@@ -153,7 +153,7 @@ impl Launcher {
     }
 
     /// The instances by group (`sections` in the mockup): those without a group first.
-    fn glass_instances(&mut self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+    pub(super) fn glass_instances(&mut self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let t = self.theme;
         let selected = self.selected_instance().map(|i| i.id.clone());
         let on_packs = self.page == Page::Mods && self.mods.on_modpacks();
@@ -293,6 +293,7 @@ impl Launcher {
         }));
         let header = div()
             .flex()
+            .when(horizon_launcher::i18n::is_rtl(), |d| d.flex_row_reverse())
             .flex_none()
             .items_center()
             .justify_between()
@@ -545,7 +546,7 @@ impl Launcher {
                         .child(
                             div()
                                 .relative()
-                                .font_family(horizon_theme::glass::FONT)
+                                .font_family(crate::theme::font())
                                 .text_size(px(14.))
                                 .child(label),
                         )
@@ -590,18 +591,31 @@ impl Launcher {
             .flex_none()
             .w(px(SIDEBAR))
             .my(px(MARGIN))
-            .ml(px(MARGIN))
+            .when(!horizon_launcher::i18n::is_rtl(), |d| d.ml(px(MARGIN)))
+            .when(horizon_launcher::i18n::is_rtl(), |d| d.mr(px(MARGIN)))
             .overflow_hidden()
+            .child(
+                ui::text(17., FontWeight::SEMIBOLD, ink::FULL)
+                    .text_center()
+                    .px(px(8.))
+                    .pt(px(16.))
+                    .child(horizon_launcher::branding::APP_NAME),
+            )
             .child(header.relative())
             .child(list.relative())
             .child(foot.relative())
     }
 
-    /// The glass top bar: the pages in a glass strip, then the player, Microsoft sign-in and
+    /// The glass top bar: the pages in a glass strip, then the player, active downloads and
     /// Settings (`px-8 pt-3.5`).
     pub(super) fn glass_topbar(&mut self, cx: &mut Context<Self>) -> Div {
         let t = self.theme;
-        let mut tabs = div().flex().items_center().gap(px(4.)).min_w_0();
+        let mut tabs = div()
+            .flex()
+            .when(horizon_launcher::i18n::is_rtl(), |d| d.flex_row_reverse())
+            .items_center()
+            .gap(px(4.))
+            .min_w_0();
         for (page, label, _) in Page::in_top_bar(self.wardrobe_shown()) {
             tabs = tabs.child(
                 ui::tab(format!("nav-{label}"), tr(label), self.page == page, &t).on_click(
@@ -615,7 +629,7 @@ impl Launcher {
         // `min-w-0 xl:shrink-0`: under 1380 px the pages give way to the buttons on the right
         // and scroll sideways, as the mockup's `Tabs` (`overflow-x-auto`). Non-English locales
         // with wider labels (and the build log button) require ~1300+ px, so 1380 px ensures
-        // the action buttons (Microsoft sign-in, Settings) are never pushed off-screen (#9902).
+        // the action buttons are never pushed off-screen (#9902).
         let wide = self.window_width >= 1380.;
         let strip = crate::glass::plate(radius::LARGE)
             .p(px(4.))
@@ -627,7 +641,10 @@ impl Launcher {
                     .on_scroll(|_, _, cx| cx.stop_propagation())
             }));
 
-        let (name, how) = self.who_plays();
+        let strip = if self.settings.theme.is_none() {
+            div().flex_1().min_w_0().child(ui::text(15., FontWeight::SEMIBOLD, ink::FULL).child(horizon_launcher::branding::APP_NAME))
+        } else { strip };
+        let (name, how) = if self.owner == Some(true) { self.who_plays() } else { (tr("Guest").to_string(),tr("BODKA Guest Mode")) };
         let face = match self.accounts.player() {
             Player::Microsoft(_) => self.accounts.selected().map(|a| a.uuid.clone()),
             _ => Some(profile_heads::offline_key(&name)),
@@ -693,32 +710,13 @@ impl Launcher {
             .child(keyboard(chip, &t))
             .children(self.glass_account_menu(cx));
 
-        // Signing in with Microsoft, while nobody is: the mockup's button.
-        let sign_in = (!matches!(self.accounts.player(), Player::Microsoft(_))).then(|| {
-            keyboard(
-                div()
-                    .id("topbar-sign-in")
-                    .relative()
-                    .flex()
-                    .items_center()
-                    .gap(px(10.))
-                    .h(px(44.))
-                    .px(px(16.))
-                    .rounded(px(radius::ROW))
-                    .bg(white(fill::BUTTON))
-                    .hover(|s| s.bg(white(fill::BUTTON_HOVER)))
-                    .cursor_pointer()
-                    .child(microsoft::logo(16.))
-                    .child(
-                        ui::text(14., FontWeight::MEDIUM, ink::FULL)
-                            .child(tr("Sign in with Microsoft")),
-                    )
-                    .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                        this.start_sign_in();
-                        cx.notify();
-                    })),
-                &t,
-            )
+        let downloads = self.installing.as_ref().map(|_| {
+            ui::quiet("topbar-transfer", tr("Downloads"), 44., &t).on_click(cx.listener(
+                |this, _: &ClickEvent, _, cx| {
+                    this.go(Page::Downloads);
+                    cx.notify();
+                },
+            ))
         });
         let settings = ui::icon_button(
             "nav-Settings",
@@ -765,18 +763,20 @@ impl Launcher {
             .gap(px(12.))
             .px(px(32.))
             .pt(px(14.))
+            .when(horizon_launcher::i18n::is_rtl(), |d| d.flex_row_reverse())
             .child(strip)
             .children(self.toast_in_topbar())
             .child(
                 div()
-                    .ml_auto()
+                    .when(!horizon_launcher::i18n::is_rtl(), |d| d.ml_auto())
+                    .when(horizon_launcher::i18n::is_rtl(), |d| d.mr_auto())
                     .flex()
                     .flex_none()
                     .items_center()
                     .gap(px(6.))
                     .children(build_log)
                     .child(account)
-                    .children(sign_in)
+                    .children(downloads)
                     .child(settings),
             )
     }

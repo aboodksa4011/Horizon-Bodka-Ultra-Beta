@@ -28,7 +28,7 @@ impl Launcher {
             if tag.is_empty() {
                 "Minecraft"
             } else {
-                "Horizon"
+                horizon_launcher::branding::APP_NAME
             },
             |i| i.name.as_str(),
         );

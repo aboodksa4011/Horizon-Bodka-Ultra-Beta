@@ -43,6 +43,15 @@ impl Launcher {
                 tr("Patch notes"),
                 tr("What changed in each release, newest first."),
             ))
+            .when(horizon_launcher::i18n::is_rtl(), |d| {
+                d.child(
+                    ui::text(14., FontWeight::NORMAL, ink::QUIET)
+                        .mb(px(12.))
+                        .child(tr(
+                            "Upstream release notes are shown in their original language.",
+                        )),
+                )
+            })
             .children(sponsor);
         let releases = match &self.releases {
             Load::Loading => return page.child(centered(tr("Loading patch notes…"), &t)),

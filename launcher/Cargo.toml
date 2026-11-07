@@ -35,6 +35,8 @@ toml = "1.1"
 semver = "1"
 zip = { version = "9.1.3", default-features = false, features = ["deflate"] }
 dirs = "5"
+# Atomically restore missing local mods without overwriting a player edit.
+tempfile = "3"
 # The system's preferred languages, for the window's language (i18n.rs).
 sys-locale = "0.3"
 clap = { version = "4", features = ["derive"] }
@@ -96,7 +98,7 @@ raw-window-handle = "0.6"
 keyring = { version = "3", features = ["windows-native"] }
 # Java's heap slider reads the computer's memory; the uninstaller hides its running copy; an
 # abandoned launcher update is one whose process has gone. Already in the lockfile.
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_SystemInformation", "Win32_System_Threading"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_SystemInformation", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging", "Win32_Media_Audio"] }
 # Shortcuts written by the shell itself (shortcut::write_windows_link): the hand-laid Shell Link has
 # no target ID list, so Explorer shows an empty target and starts nothing.
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_UI_Shell"] }
@@ -113,3 +115,7 @@ syn = "2"
 
 [profile.release]
 strip = true
+
+[patch.crates-io]
+# 0.1.13's DirectWrite renderer ignored bidiLevel and reversed shaped Arabic glyphs.
+gpui-fast-windows = { path = "../third_party/gpui-fast-windows" }

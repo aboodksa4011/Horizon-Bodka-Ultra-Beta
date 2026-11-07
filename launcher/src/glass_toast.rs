@@ -55,6 +55,7 @@ impl Launcher {
     pub(super) fn toast_tick(&mut self) -> bool {
         let now = current().map(|l| l.1);
         let changed = now != self.toast_seen;
+        if changed && now.is_some() {crate::sound::play(crate::sound::Event::Notice);}
         self.toast_seen = now;
         changed
     }
@@ -97,7 +98,7 @@ impl Launcher {
                         .with_animation(
                             ElementId::named_usize("toast", n as usize),
                             crate::motion::eased(crate::motion::POP),
-                            |d, p| d.opacity(p).top(px(crate::motion::POP_RISE * (1. - p))),
+                            |d, p| d.opacity(p).top(px(if crate::motion::spatial() {crate::motion::POP_RISE * (1. - p)} else {0.})),
                         ),
                 ),
         )

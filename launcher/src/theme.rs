@@ -9,13 +9,18 @@ use horizon_theme as tokens;
 use std::time::Duration;
 
 pub use tokens::night::{self, Night};
-pub use tokens::{Step, CAPTION, DISPLAY, HEADING, LABEL, MICRO, TITLE, UI, WORDMARK};
+pub use tokens::{Step, CAPTION, DISPLAY, HEADING, LABEL, MICRO, TITLE, UI};
 pub const FONT: &str = night::FONT;
 pub const DISPLAY_FONT: &str = night::DISPLAY_FONT;
 pub const MONO: &str = tokens::MONO;
-/// What the Blocks parts set in their pixel face (headings, navigation, buttons) until their
-/// screens are rebuilt: the night's UI family.
-pub const PIXEL: &str = night::FONT;
+/// Windows' Arabic shaping font; other platforms use their system fallback.
+pub fn font() -> &'static str {
+    if cfg!(target_os = "windows") && horizon_launcher::i18n::is_rtl() {
+        "Segoe UI"
+    } else {
+        FONT
+    }
+}
 
 pub use tokens::{BLOCK_BEVEL as BEVEL, BLOCK_LIP as LIP};
 /// Shapes and controls, shared with the game's menus and the website.
@@ -34,8 +39,6 @@ pub const PAGE_GUTTER: f32 = 32.;
 /// Motion: short and eased out, never bouncy.
 pub const QUICK: Duration = tokens::QUICK.duration();
 pub const MOVE: Duration = tokens::MOVE.duration();
-pub const ENTER: Duration = tokens::ENTER.duration();
-pub const STAGGER: Duration = tokens::STAGGER;
 
 #[derive(Clone, Copy)]
 pub struct Theme {
@@ -107,6 +110,17 @@ pub fn pinned_dark(choice: Appearance) -> Option<bool> {
 }
 
 impl Theme {
+    pub fn with_bodka(mut self, theme: horizon_launcher::bodka_settings::Theme) -> Self {
+        let p = theme.palette();
+        self.page = c(p.background);
+        self.side = c(p.background);
+        self.surface = c(p.panel);
+        self.ink = c(p.ink);
+        self.ink_soft = c(p.ink).opacity(0.8);
+        self.muted = c(p.ink).opacity(0.6);
+        self.rule = c(p.accent).opacity(0.18);
+        self
+    }
     /// The pinned look (`pinned_dark`: dark unless the player picked another), the system's when
     /// they asked to follow it, in the player's accent.
     /// This look under another sky (a launcher theme from Settings), top to bottom.

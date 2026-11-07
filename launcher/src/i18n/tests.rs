@@ -115,6 +115,37 @@ fn holes(s: &str) -> BTreeSet<&str> {
 }
 
 #[test]
+fn formatted_values_are_literal_even_when_they_contain_other_holes() {
+    assert_eq!(
+        trf_in(
+            Language::English,
+            "{folder}: {version}; {unknown}; {open",
+            &[("folder", "D:\\عالمي {version}"), ("version", "26.3")]
+        ),
+        "D:\\عالمي {version}: 26.3; {unknown}; {open"
+    );
+}
+
+#[test]
+fn arabic_ui_entries_do_not_silently_remain_in_english() {
+    let table: HashMap<String, String> = serde_json::from_str(Language::Arabic.source()).unwrap();
+    for (key, value) in table {
+        // Product names and keyboard keycaps are identifiers, not untranslated sentences.
+        if matches!(key.as_str(), "MangoHud" | "Esc") {
+            continue;
+        }
+        if value.chars().any(|c| c.is_ascii_alphabetic()) {
+            assert!(
+                value
+                    .chars()
+                    .any(|c| ('\u{0600}'..='\u{06ff}').contains(&c)),
+                "Arabic UI entry is still English: {key}"
+            );
+        }
+    }
+}
+
+#[test]
 fn every_language_has_every_string_the_code_asks_for() {
     let (mut asked, all) = strings();
     assert!(asked.contains("Language"), "the scan finds tr(\"…\")");

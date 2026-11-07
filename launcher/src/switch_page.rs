@@ -16,7 +16,9 @@ impl Launcher {
             ),
             Player::Offline(name) => (name, tr("Offline")),
             Player::GameName => (
-                self.offline_name.clone().unwrap_or_else(|| "Player".into()),
+                self.offline_name
+                    .clone()
+                    .unwrap_or_else(|| tr("Player").into()),
                 tr("Offline"),
             ),
         }
@@ -56,7 +58,9 @@ impl Launcher {
         );
         out.push((
             Player::GameName,
-            self.offline_name.clone().unwrap_or_else(|| "Player".into()),
+            self.offline_name
+                .clone()
+                .unwrap_or_else(|| tr("Player").into()),
             tr("Offline, the game's name"),
         ));
         out

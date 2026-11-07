@@ -41,7 +41,7 @@ impl Launcher {
                     .px(px(12.))
                     .rounded(px(radius::CONTROL))
                     .cursor_pointer()
-                    .font_family(horizon_theme::glass::FONT)
+                    .font_family(crate::theme::font())
                     .text_size(px(13.))
                     .when(on, |d| {
                         d.bg(white(fill::BUTTON_HOVER))

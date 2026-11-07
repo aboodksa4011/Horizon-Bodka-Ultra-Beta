@@ -602,3 +602,61 @@ fn a_download_goes_on_past_an_asset_that_keeps_failing() {
     assert!(last.contains("1 of 2 files failed"), "{last}");
     fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn java_repair_uses_hashed_local_files_and_reports_missing_assets() {
+    let (pins, mut files) = mojang();
+    let dir = scratch("dual-read-only-source");
+    let target = scratch("dual-managed");
+    let manifest_url = files
+        .keys()
+        .find(|u| u.ends_with("/26.3.json"))
+        .unwrap()
+        .clone();
+    let version = crate::minecraft_versions::Version {
+        id: pins.version.clone(),
+        kind: crate::minecraft_versions::Kind::Release,
+        url: manifest_url.clone(),
+        sha1: pins.manifests[0].clone(),
+        released: String::new(),
+    };
+    let install = dir.join("versions/26.3");
+    fs::create_dir_all(&install).unwrap();
+    fs::write(install.join("26.3.json"), files.get(&manifest_url).unwrap()).unwrap();
+    fs::write(install.join("26.3.jar"), CLIENT).unwrap();
+    let local = LocalFiles::open(&dir, &version);
+    let client_url = files
+        .keys()
+        .find(|u| u.ends_with("/client.jar"))
+        .unwrap()
+        .clone();
+    assert_eq!(local.bytes(&client_url).unwrap(), CLIENT);
+    fs::write(install.join("26.3.jar"), b"changed").unwrap();
+    assert!(local.bytes(&client_url).is_none());
+    let h = sha1_hex(SOUND);
+    files.remove(&format!("{OBJECTS}/{}/{h}", &h[..2]));
+    let server = Server {
+        files,
+        asked: Mutex::new(Vec::new()),
+    };
+    let strict = Pins::for_version(&version.id, &version.sha1);
+    let error = download(
+        &strict,
+        &target,
+        "linux",
+        1,
+        &|u| local.bytes(u).map_or_else(|| server.fetch(u), Ok),
+        &GO,
+        &|_| {},
+    )
+    .unwrap_err();
+    assert!(error.contains("404"));
+    assert_eq!(
+        fs::read(target.join("versions/26.3/26.3.jar")).unwrap(),
+        CLIENT
+    );
+    assert_eq!(fs::read(install.join("26.3.jar")).unwrap(), b"changed");
+    assert!(!server.asked().contains(&manifest_url));
+    fs::remove_dir_all(dir).unwrap();
+    fs::remove_dir_all(target).unwrap();
+}

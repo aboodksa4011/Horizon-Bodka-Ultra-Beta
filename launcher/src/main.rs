@@ -6,6 +6,7 @@
 mod agents_page;
 mod art;
 mod blocks;
+mod bodka;
 mod cli;
 mod cli_tools;
 mod collection;
@@ -14,6 +15,7 @@ mod console_page;
 mod cull;
 mod datapacks_page;
 mod dev_options;
+mod dual_page;
 mod export_page;
 mod frame;
 mod game_tools;
@@ -52,6 +54,7 @@ mod modpacks_page;
 mod mods_page;
 mod mods_project;
 mod motion;
+mod sound;
 mod multiplayer_page;
 mod native_log_page;
 mod new_instance;
@@ -65,6 +68,8 @@ mod profile_heads;
 mod scene;
 mod screenshots_page;
 mod scrollbar;
+#[cfg(all(test, windows))]
+mod settings_scroll_test;
 mod servers_page;
 #[cfg(windows)]
 mod setup_page;
@@ -107,6 +112,13 @@ use theme::Theme;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Page {
+    Dashboard,
+    Dual,
+    Downloads,
+    Worlds,
+    Performance,
+    Diagnostics,
+    About,
     Play,
     Versions,
     /// Mods, resource packs and modpacks (imported ones and the browser's).
@@ -133,10 +145,16 @@ impl Page {
             Ok("servers") => Page::Servers,
             Ok("wardrobe") if horizon_cosmetics::forced() => Page::Wardrobe,
             Ok("shop") if horizon_cosmetics::forced() => Page::Shop,
+            Ok("dual") => Page::Dual,
             Ok("versions") => Page::Versions,
             Ok("notes") => Page::Notes,
             Ok("settings") => Page::Settings,
-            _ => Page::Play,
+            Ok("play") => Page::Play,
+            Ok("downloads") => Page::Downloads,
+            Ok("performance") => Page::Performance,
+            Ok("diagnostics") => Page::Diagnostics,
+            Ok("about") => Page::About,
+            _ => Page::Dashboard,
         };
         // The data folder did not open: start on Settings, where the message and the two
         // recoveries are (an explicit HORIZON_LAUNCHER_PAGE still wins, for screenshots).
@@ -148,13 +166,20 @@ impl Page {
 
     /// Every page, with its name and icon: the top bar shows all but Settings, which has its
     /// own button.
-    const ALL: [(Page, &'static str, &'static str); 8] = [
-        (Page::Play, "Home", "home"),
+    const ALL: [(Page, &'static str, &'static str); 15] = [
+        (Page::Dashboard, "Home", "home"),
+        (Page::Play, "Play game", "play"),
+        (Page::Downloads, "Downloads", "archive"),
+        (Page::Worlds, "Worlds", "globe-02"),
+        (Page::Performance, "Performance", "computer"),
+        (Page::Diagnostics, "Diagnostics", "search-01"),
+        (Page::About, "About", "information-circle"),
         (Page::Mods, "Mods", "package"),
         (Page::Servers, "Servers", "server"),
         (Page::Wardrobe, "Wardrobe", "user"),
         (Page::Shop, "Shop", "bag"),
         (Page::Versions, "Versions", "archive"),
+        (Page::Dual, "BODKA Dual Launcher", "package"),
         (Page::Notes, "Patch notes", "notes"),
         (Page::Settings, "Settings", "sliders"),
     ];
@@ -195,10 +220,8 @@ struct Crash {
     copied: bool,
 }
 
-/// The opening: the wordmark holds at least `OPENING_HOLD` (until the release
-/// list is in, at most `OPENING_MAX`), then the launcher appears over `OPENING_REVEAL`.
-const OPENING_HOLD: Duration = horizon_theme::OPENING_HOLD;
-const OPENING_MAX: Duration = horizon_theme::OPENING_MAX;
+/// First-run introduction: four seconds of text, then explicit acknowledgement.
+const OPENING_HOLD: Duration = Duration::from_secs(4);
 const OPENING_REVEAL: Duration = horizon_theme::OPENING_REVEAL;
 
 /// The phase of the opening at one moment: how far the reveal has gone, 0 to 1.
@@ -224,11 +247,14 @@ const LOG_LINES: usize = 2000;
 struct Launcher {
     theme: Theme,
     page: Page,
+    pending_page: Option<(Page, Instant)>,
+    previous_page: Option<Page>,
     /// How many times the page changed, for the page transition.
     switches: usize,
     content_scroll: Scrollbar,
     /// The glass Settings page's own scroll: its sections beside their list.
-    settings_pane: gpui::ScrollHandle,
+    settings_pane: Scrollbar,
+    dual: dual_page::Catalog,
     /// The section the glass Settings list marked when last drawn (`glass_settings`).
     settings_marked: usize,
     /// The Mods page's project card, kept in view beside its list.
@@ -253,6 +279,9 @@ struct Launcher {
     releases: Load<Vec<Release>>,
     installed: Vec<String>,
     installing: Option<(String, f32)>,
+    transfers: Vec<horizon_launcher::downloads::Transfer>,
+    download_control: Option<horizon_launcher::downloads::Control>,
+    download_details: Option<String>,
     /// The versions being deleted on background threads. Each is already out of `installed`, so
     /// nothing can launch, select or prepare it, and its row can't install or remove it again.
     /// More than one may run at once: a row's Remove stays usable while another version goes.
@@ -582,15 +611,19 @@ impl Launcher {
         titlebar::apply_appearance(window, settings.appearance);
         let mut this = Self {
             theme: Theme::for_appearance(settings.appearance, settings.accent, window.appearance())
-                .with_glass(settings.glass_tint(), settings.glass_blur()),
+                .with_glass(settings.glass_tint(), settings.glass_blur())
+                .with_bodka(settings.bodka.theme),
             page: Page::from_env(),
             switches: 0,
+            pending_page: None,
+            previous_page: None,
             content_scroll: Scrollbar::default(),
-            settings_pane: gpui::ScrollHandle::new(),
+            settings_pane: Scrollbar::default(),
+            dual: Default::default(),
             settings_marked: 0,
             mods_sticky: sticky::Sticky::default(),
             long_list: cull::Cull::default(),
-            opening: (!settings.skip_opening).then(|| {
+            opening: (!settings.skip_opening && !settings.bodka.opening_seen).then(|| {
                 let focus = cx.focus_handle();
                 window.focus(&focus, cx);
                 Opening {
@@ -613,6 +646,9 @@ impl Launcher {
             releases: Load::Loading,
             installed,
             installing: None,
+            transfers: horizon_launcher::downloads::history(),
+            download_control: None,
+            download_details: None,
             removing: Vec::new(),
             disk: Vec::new(),
             disk_for: Vec::new(),
@@ -873,6 +909,7 @@ impl Launcher {
     }
 
     fn go(&mut self, page: Page) {
+        sound::play(sound::Event::Click);
         // The game may have made up a name since, and the CLI or another window may have
         // changed the accounts: read them again (small files, once a switch).
         self.offline_name = offline_name();
@@ -889,19 +926,23 @@ impl Launcher {
         self.load_profile_heads();
         self.wardrobe_reload |= matches!(page, Page::Wardrobe | Page::Shop);
         if page != self.page {
-            self.page = page;
-            self.switches += 1;
-            self.content_scroll = Scrollbar::default();
-            self.long_list = cull::Cull::default();
-            self.mods_sticky.reset();
-            if page == Page::Mods {
-                self.mods.reset_lists();
-            }
-        }
+            if motion::still() || self.bench.is_some() {self.show_page(page);} else {self.pending_page=Some((page,Instant::now()));}
+        } else {self.pending_page=None;}
         self.picker_open = false;
         self.language_menu = false;
         self.mods.browse.sort_menu = false;
         self.account_menu = false;
+    }
+
+    fn show_page(&mut self, page: Page) {
+        self.previous_page=Some(self.page);
+        self.page=page;
+        self.pending_page=None;
+        self.switches+=1;
+        self.content_scroll=Scrollbar::default();
+        self.long_list=cull::Cull::default();
+        self.mods_sticky.reset();
+        if page==Page::Mods {self.mods.reset_lists();}
     }
 
     fn check_updates(&mut self) {
@@ -1122,6 +1163,12 @@ impl Launcher {
         while let Ok(msg) = self.rx.try_recv() {
             changed = true;
             match msg {
+                Msg::DualFound(g, rows) => self.dual_found(g,rows),
+                Msg::DualBindings(g, bindings) => self.dual_bindings(g,bindings),
+                Msg::DualScanned(g, summary) => self.dual_scanned(g,summary),
+                Msg::DualImported(origin, result) => self.dual_imported(origin,result),
+                Msg::DualRepairLine(line) => self.dual_repair_line(line),
+                Msg::DualRepaired(result) => self.dual_repaired(result),
                 Msg::Releases(r) => {
                     if let (Ok(_), Some(checked)) = (&r, self.checked) {
                         self.perf.record_since("launcher.release_list_ms", checked);
@@ -1306,7 +1353,18 @@ impl Launcher {
                     self.bar = (self.bar.1, p);
                     self.installing = Some((tag, p));
                 }
+                Msg::Transfer(transfer) => {
+                    if let Some(p)=transfer.fraction() {
+                        self.bar=(self.bar.1,p);
+                        if let Some((tag,progress))=&mut self.installing {if *tag==transfer.tag {*progress=p;}}
+                    }
+                    if let Some(current)=self.transfers.iter_mut().find(|t|t.tag==transfer.tag) {*current= *transfer;}
+                    else {self.transfers.insert(0,*transfer);}
+                }
                 Msg::Installed(tag, result) => {
+                    let installed_ok = result.is_ok();
+                    sound::play(if result.is_ok() {sound::Event::Complete} else {sound::Event::Error});
+                    self.download_control=None;
                     self.installing = None;
                     self.bar = (0., 0.);
                     self.installed = backend::installed();
@@ -1344,6 +1402,9 @@ impl Launcher {
                     }
                     if let Some(next) = self.install_next.take() {
                         self.install_for_instance(next);
+                    } else if installed_ok && self.settings.auto_install() && self.updates.horizon.is_some() {
+                        // Re-evaluate an update deferred by this install against the versions now on disk.
+                        self.check_updates();
                     }
                 }
                 Msg::Removed(tag, result) => {
@@ -1636,7 +1697,7 @@ impl Launcher {
     }
 
     fn install(&mut self, release: &Release) {
-        if release.asset.is_none() || self.removing.contains(&release.tag) {
+        if self.installing.is_some() || release.asset.is_none() || self.removing.contains(&release.tag) {
             return;
         }
         let (release, tx) = (release.clone(), self.tx.clone());
@@ -1645,11 +1706,13 @@ impl Launcher {
         self.install_started = Some(Instant::now());
         self.bar = (0., 0.);
         self.install_error = None;
+        let control=horizon_launcher::downloads::Control::default();
+        self.download_control=Some(control.clone());
         std::thread::spawn(move || {
-            let progress = |p| {
-                let _ = tx.send(Msg::Progress(tag.clone(), p));
-            };
-            let result = backend::install(&release, progress);
+            let progress_tx=tx.clone();
+            let result = horizon_launcher::downloads::run(&release,control,move |transfer| {
+                let _=progress_tx.send(Msg::Transfer(Box::new(transfer)));
+            }, |_|{});
             let _ = tx.send(Msg::Installed(tag, result));
         });
     }
@@ -2146,7 +2209,7 @@ fn text(step: theme::Step) -> Div {
     let d = if step.mono {
         d.font_family(theme::MONO)
     } else if step.px >= theme::HEADING.px {
-        d.font_family(theme::PIXEL)
+        d.font_family(crate::theme::font())
     } else {
         d
     };
@@ -2258,7 +2321,7 @@ fn button(
         .justify_center()
         .h(px(theme::CONTROL))
         .px(px(14.))
-        .font_family(theme::PIXEL)
+        .font_family(crate::theme::font())
         .text_size(px(15.))
         .font_weight(FontWeight::MEDIUM)
         .cursor_pointer()
@@ -2444,7 +2507,7 @@ fn segments<T: Copy + PartialEq + 'static>(
                 .h(px(theme::SEGMENT))
                 .px(px(14.))
                 .pb(px(2.))
-                .font_family(theme::PIXEL)
+                .font_family(crate::theme::font())
                 .text_size(px(14.))
                 .font_weight(FontWeight::MEDIUM)
                 .cursor_pointer()
@@ -2707,20 +2770,24 @@ fn quiet_note(text_: impl Into<SharedString>, t: &Theme) -> Div {
 
 /// Something went wrong: a dot in the danger colour, then what happened.
 fn notice(text_: String, t: &Theme) -> Div {
+    let rtl = crate::i18n::is_rtl();
     plate(t)
         .flex()
+        .when(rtl, |d| d.flex_row_reverse().text_right())
         .gap(px(12.))
         .p(px(16.))
         .text_size(px(theme::UI.px))
         .line_height(px(21.))
         .text_color(t.ink)
-        .border_l(px(6.))
+        .when(rtl, |d| d.border_r(px(6.)))
+        .when(!rtl, |d| d.border_l(px(6.)))
         .child(
             div()
                 .absolute()
                 .top(px(-2.))
                 .bottom(px(-2.))
-                .left(px(-6.))
+                .when(rtl, |d| d.right(px(-6.)))
+                .when(!rtl, |d| d.left(px(-6.)))
                 .w(px(6.))
                 .bg(t.danger),
         )
@@ -3176,8 +3243,8 @@ impl Launcher {
                 .child(mark(24., &t))
                 .child(
                     shell::text(theme::night::TITLE, shell::c(n.ink))
-                        .font_family(theme::DISPLAY_FONT)
-                        .child("Horizon"),
+                        .font_family(crate::theme::font())
+                        .child(horizon_launcher::branding::APP_NAME),
                 )
         });
         shell::sidebar_plate(&t)
@@ -3817,6 +3884,7 @@ impl Launcher {
         let opening = switch("opening", !self.settings.skip_opening, &t).on_click(cx.listener(
             |this, _: &ClickEvent, _, cx| {
                 this.settings.skip_opening = !this.settings.skip_opening;
+                if !this.settings.skip_opening {this.settings.bodka.opening_seen=false;}
                 this.save_settings();
                 cx.notify();
             },
@@ -3954,6 +4022,10 @@ impl Launcher {
                 move |choice, window, cx| {
                     let _ = this.update(cx, |this, cx| {
                         this.settings.appearance = choice;
+                        if this.settings.theme.is_none() {
+                            use horizon_launcher::bodka_settings::Theme as B;
+                            this.settings.bodka.theme=match choice {backend::Appearance::Light=>B::WhiteMinimal,backend::Appearance::Dark if this.settings.bodka.theme==B::WhiteMinimal=>B::ClassicBlack,_=>this.settings.bodka.theme};
+                        }
                         this.save_settings();
                         titlebar::apply_appearance(window, choice);
                         this.theme = this.settings_theme(window);
@@ -4775,7 +4847,11 @@ impl Launcher {
                 .gap(px(10.))
                 .w(px(180.))
                 .child(progress_bar(None, &t))
-                .child(text(theme::MICRO).text_color(t.muted).child("Removing…"))
+                .child(
+                    text(theme::MICRO)
+                        .text_color(t.muted)
+                        .child(tr("Removing…")),
+                )
         } else {
             self.version_actions(tag, selected, cx)
         };
@@ -5013,7 +5089,11 @@ impl Launcher {
                         .gap(px(10.))
                         .w(px(180.))
                         .child(progress_bar(None, &t))
-                        .child(text(theme::MICRO).text_color(t.muted).child("Removing…"))
+                        .child(
+                            text(theme::MICRO)
+                                .text_color(t.muted)
+                                .child(tr("Removing…")),
+                        )
                         .into_any_element()
                 } else if installed && backend::needs_game_architecture_install(&tag, &release) {
                     let mut b = button(
@@ -5275,13 +5355,17 @@ fn progress_bar(fraction: Option<(f32, f32)>, t: &Theme) -> Div {
         });
     match fraction {
         Some((from, to)) => {
-            let (from, to) = (from.clamp(0.02, 1.), to.clamp(0.02, 1.));
+            let (from, to) = (from.clamp(0., 1.), to.clamp(0., 1.));
+            if !motion::spatial() || from == to {
+                return track.child(bar.left_0().w(relative(to)));
+            }
             track.child(bar.left_0().with_animation(
                 ElementId::named_usize("bar", (to * 1000.) as usize),
-                Animation::new(theme::MOVE).with_easing(ease_out_quint()),
+                motion::eased(motion::POP),
                 move |d, p| d.w(relative(from + (to - from) * p)),
             ))
         }
+        None if !motion::continuous() => track.child(bar.left(relative(0.35)).w(relative(0.3))),
         None => track.child(
             bar.w(relative(0.3)).with_animation(
                 "shuttle",
@@ -5296,6 +5380,12 @@ fn progress_bar(fraction: Option<(f32, f32)>, t: &Theme) -> Div {
 
 impl Render for Launcher {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        motion::configure(self.settings.bodka.motion, window.is_window_active());
+        sound::configure(&self.settings.bodka);
+        if let Some((page,at))=self.pending_page {
+            if motion::still() || at.elapsed()>=motion::duration(110) {self.show_page(page);}
+            else {window.request_animation_frame();}
+        }
         let t = self.theme;
         if specimen::wanted() {
             return div()
@@ -5310,6 +5400,7 @@ impl Render for Launcher {
             self.theme = self.settings_theme(window);
         }
         glass_ui::set_on(self.theme.glass);
+        glass::set_bodka(self.settings.theme.is_none().then(|| self.settings.bodka.theme.palette()));
         glass_ui::set_light(!self.theme.dark);
         glass::set_light(!self.theme.dark);
         self.look = self.theme.look;
@@ -5343,6 +5434,13 @@ impl Render for Launcher {
         self.window_long_side = f32::from(size.width).max(f32::from(size.height));
         self.scale_factor = window.scale_factor();
         let content = match self.page {
+            Page::Dashboard => self.bodka_dashboard(cx),
+            Page::Dual => self.dual_page(cx),
+            Page::Downloads => self.bodka_downloads(cx),
+            Page::Worlds => self.bodka_worlds(cx),
+            Page::Performance => self.bodka_performance(cx),
+            Page::Diagnostics => self.bodka_diagnostics(cx),
+            Page::About => self.bodka_about(cx),
             Page::Play => self.play_page(cx),
             Page::Versions => self.versions_page(cx),
             Page::Mods => self.mods_page(cx),
@@ -5356,16 +5454,19 @@ impl Render for Launcher {
         self.pictures.free_retired(window);
         self.wardrobe_marks.free_replaced(window);
         // The new page fades in and rises a few pixels, as the website's tabs do (`hzl-pop`).
+        let departure=self.pending_page.map_or(1.,|(_,at)|1.-motion::fade(at.elapsed().as_secs_f32()/motion::duration(110).as_secs_f32()));
+        let pane_scrolls = t.glass && self.page == Page::Settings;
         let content = div()
             .relative()
             .w_full()
+            .when(pane_scrolls, |d| d.h_full().min_h_0())
             // Let the page shrink inside the padded flex row so long notices can wrap.
             .min_w_0()
-            .child(content)
+            .child(div().when(pane_scrolls, |d| d.h_full().min_h_0()).opacity(departure).child(content))
             .with_animation(
                 ElementId::named_usize("page", self.switches),
                 motion::eased(motion::POP),
-                |d, p| d.opacity(p).top(px(motion::POP_RISE * (1. - p))),
+                |d, p| d.opacity(p).top(px(if motion::spatial() { motion::POP_RISE * (1. - p) } else { 0. })),
             );
         let (reveal, held) = self.opening_phase(window);
         let ui = ease_out_cubic((reveal - 0.3) / 0.7);
@@ -5375,7 +5476,9 @@ impl Render for Launcher {
         // Dark: the new design's scene; Light keeps the dawn sky until the design has a light
         // look.
         glass::begin_build(window);
-        let sky = if t.dark {
+        let sky = if self.settings.theme.is_none() {
+            self.bodka_background(cx)
+        } else if t.dark {
             self.scene.clone().into_any_element()
         } else {
             let (sky, next) = self.sky.render(
@@ -5394,7 +5497,7 @@ impl Render for Launcher {
         let (topbar, sidebar) = if t.glass {
             (
                 self.glass_topbar(cx),
-                self.glass_sidebar(window, cx).into_any_element(),
+                if self.settings.theme.is_none() { self.bodka_sidebar(cx) } else { self.glass_sidebar(window, cx) }.into_any_element(),
             )
         } else {
             (self.topbar(cx), self.sidebar(window, cx).into_any_element())
@@ -5406,6 +5509,7 @@ impl Render for Launcher {
         };
         let mut root = div()
             .id("root")
+            .on_mouse_down(gpui::MouseButton::Left, |_,_,_|sound::play(sound::Event::Click))
             .track_focus(&self.root_focus)
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
                 let k = &ev.keystroke;
@@ -5453,7 +5557,7 @@ impl Render for Launcher {
             .flex()
             .flex_col()
             .size_full()
-            .font_family(theme::FONT)
+            .font_family(crate::theme::font())
             .text_color(t.ink)
             .overflow_hidden()
             .child(
@@ -5461,6 +5565,7 @@ impl Render for Launcher {
                     .relative()
                     .flex()
                     .size_full()
+                    .when(horizon_launcher::i18n::is_rtl(), |d| d.flex_row_reverse())
                     .opacity(ui)
                     .top(px(theme::RISE * (1. - ui)))
                     .child(sidebar)
@@ -5472,59 +5577,64 @@ impl Render for Launcher {
                             .min_w_0()
                             .child(topbar)
                             .child(
-                                self.content_scroll
-                                    .wrap(
-                                        div()
-                                            .id("content")
-                                            .relative()
-                                            .flex_1()
-                                            .min_h_0()
-                                            .overflow_y_scroll()
-                                            // A scrolled page is drawn from its layer, not
-                                            // rendered: the Mods page's card asks, once the
-                                            // offset has moved, whether it must follow.
-                                            .on_scroll(cx.listener(
-                                                |this, _: &gpui::ScrollEvent, window, cx| {
-                                                    if this.page != Page::Mods {
-                                                        return;
-                                                    }
-                                                    cx.on_next_frame(window, |this, _, cx| {
-                                                        if this
-                                                            .mods_sticky
-                                                            .moved(&this.content_scroll.handle)
-                                                        {
-                                                            cx.notify();
+                                if pane_scrolls {
+                                    div()
+                                        .flex_1()
+                                        .min_h_0()
+                                        .overflow_hidden()
+                                        .mt(px(crate::glass::CONTENT_INSET))
+                                        .px(px(theme::PAGE_GUTTER))
+                                        .pb(px(14.))
+                                        .child(content)
+                                } else {
+                                    self.content_scroll
+                                        .wrap(
+                                            div()
+                                                .id("content")
+                                                .relative()
+                                                .flex_1()
+                                                .min_h_0()
+                                                .overflow_y_scroll()
+                                                // A scrolled page is drawn from its layer, not
+                                                // rendered: the Mods page's card asks, once the
+                                                // offset has moved, whether it must follow.
+                                                .on_scroll(cx.listener(
+                                                    |this, _: &gpui::ScrollEvent, window, cx| {
+                                                        if this.page != Page::Mods {
+                                                            return;
                                                         }
-                                                    });
-                                                },
-                                            ))
-                                            .child(
-                                                div()
-                                                    .flex()
-                                                    .w_full()
-                                                    .min_w_0()
-                                                    .px(px(theme::PAGE_GUTTER))
-                                                    // The glass look's page heads hold their
-                                                    // own 40 px above the title.
-                                                    .pt(px(if self.page == Page::Play || t.glass {
-                                                        0.
-                                                    } else {
-                                                        28.
-                                                    }))
-                                                    .pb(px(48.))
-                                                    // The glass Settings page scrolls its own
-                                                    // pane under a still title.
-                                                    .when(
-                                                        t.glass && self.page == Page::Settings,
-                                                        |d| d.h_full().pb(px(14.)),
-                                                    )
-                                                    .child(content),
-                                            ),
-                                        &t,
-                                    )
-                                    .flex_1()
-                                    .min_h_0()
-                                    .when(t.glass, |d| d.mt(px(crate::glass::CONTENT_INSET))),
+                                                        cx.on_next_frame(window, |this, _, cx| {
+                                                            if this
+                                                                .mods_sticky
+                                                                .moved(&this.content_scroll.handle)
+                                                            {
+                                                                cx.notify();
+                                                            }
+                                                        });
+                                                    },
+                                                ))
+                                                .child(
+                                                    div()
+                                                        .flex()
+                                                        .w_full()
+                                                        .min_w_0()
+                                                        .px(px(theme::PAGE_GUTTER))
+                                                        // The glass look's page heads hold their
+                                                        // own 40 px above the title.
+                                                        .pt(px(if self.page == Page::Play || t.glass {
+                                                            0.
+                                                        } else {
+                                                            28.
+                                                        }))
+                                                        .pb(px(48.))
+                                                        .child(content),
+                                                ),
+                                            &t,
+                                        )
+                                        .flex_1()
+                                        .min_h_0()
+                                        .when(t.glass, |d| d.mt(px(crate::glass::CONTENT_INSET)))
+                                },
                             ),
                     ),
             );
@@ -5559,60 +5669,7 @@ impl Render for Launcher {
         if self.asking_owner() {
             root = root.child(self.owner_screen(cx));
         }
-        if let Some(opening) = &self.opening {
-            // The wordmark arrives letter by letter, then gives way to the launcher; a click or
-            // a key skips ahead.
-            let gone = 1. - ease_out_cubic(reveal / 0.6);
-            let word = div()
-                .flex()
-                .font_family(theme::PIXEL)
-                .text_size(px(theme::WORDMARK.px * 0.5))
-                .line_height(px(theme::WORDMARK.px * 0.5))
-                .font_weight(FontWeight::BOLD)
-                .text_color(t.ink)
-                .children("HORIZON".chars().enumerate().map(|(i, c)| {
-                    let at = held - i as f32 * theme::STAGGER.as_secs_f32() * 1.5;
-                    let p = ease_out_cubic(at / theme::ENTER.as_secs_f32());
-                    div()
-                        .relative()
-                        .opacity(p)
-                        .top(px(theme::RISE * 2. * (1. - p)))
-                        .child(c.to_string())
-                }));
-            root = root.child(
-                div()
-                    .id("opening")
-                    .track_focus(&opening.focus)
-                    .absolute()
-                    .top_0()
-                    .left_0()
-                    .size_full()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .bg(t.page.opacity(gone))
-                    .when(reveal == 0., |d| d.cursor_pointer())
-                    .child(
-                        div()
-                            .relative()
-                            .top(px(-24. * (1. - gone)))
-                            .opacity(gone)
-                            .child(word),
-                    )
-                    .when(reveal == 0., |d| {
-                        d.on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                            this.skip_opening();
-                            cx.notify();
-                        }))
-                        .on_key_down(cx.listener(
-                            |this, _: &KeyDownEvent, _, cx| {
-                                this.skip_opening();
-                                cx.notify();
-                            },
-                        ))
-                    }),
-            );
-        }
+        root = root.children(self.bodka_boot(held, reveal, cx));
         div()
             .flex()
             .flex_col()
@@ -5631,14 +5688,10 @@ impl Launcher {
     /// Where the opening is: the reveal's progress (1 when there is no opening) and how long
     /// the wordmark has been showing, in seconds.
     fn opening_phase(&mut self, window: &mut Window) -> (f32, f32) {
-        let loaded = !matches!(self.releases, Load::Loading);
         let Some(opening) = &mut self.opening else {
             return (1., 10.);
         };
         let held = opening.started.get_or_insert_with(Instant::now).elapsed();
-        if opening.reveal.is_none() && ((held >= OPENING_HOLD && loaded) || held >= OPENING_MAX) {
-            opening.reveal = Some(Instant::now());
-        }
         let reveal = opening.reveal.map_or(0., |at| {
             at.elapsed().as_secs_f32() / OPENING_REVEAL.as_secs_f32()
         });
@@ -5646,7 +5699,7 @@ impl Launcher {
             self.opening = None;
             return (1., 10.);
         }
-        window.request_animation_frame();
+        if window.is_window_active() && (held<OPENING_HOLD || opening.reveal.is_some()) { window.request_animation_frame(); }
         (reveal, held.as_secs_f32())
     }
 
@@ -5679,9 +5732,12 @@ impl Launcher {
         self.sky_wake = Some((at, timer));
     }
 
-    fn skip_opening(&mut self) {
+    fn acknowledge_opening(&mut self) {
         if let Some(opening) = &mut self.opening {
+            if opening.started.is_none_or(|at|at.elapsed()<OPENING_HOLD) {return;}
             opening.reveal.get_or_insert_with(Instant::now);
+            self.settings.bodka.opening_seen=true;
+            self.save_settings();
         }
     }
 }
@@ -5768,6 +5824,8 @@ fn main() {
     // What the launcher downloads goes through the player's proxy, if they set one: the parts
     // that build their own agents (`horizon-port-pack`) are told before anything starts.
     horizon_launcher::proxy::announce(horizon_launcher::backend::Settings::load().proxy);
+    // CLI errors and setup windows use the same saved language as the main window.
+    horizon_launcher::i18n::set(backend::Settings::load().language());
     // The setup wizard and `horizon-launcher.exe uninstall` (what Control Panel runs) are windows,
     // not CLI commands: asked of the CLI parser first, `uninstall` was refused as an unknown
     // subcommand, with the error going to the console that Control Panel's start doesn't have.
@@ -5829,7 +5887,7 @@ fn main() {
                     titlebar: Some(titlebar::options()),
                     #[cfg(target_os = "linux")]
                     window_decorations: Some(gpui::WindowDecorations::Client),
-                    app_id: Some("horizon-launcher".into()),
+                    app_id: Some(horizon_launcher::branding::APP_ID.into()),
                     // GPUI draws a window without focus at most every 33 ms to save energy. A
                     // benchmark's window often starts without it (KDE keeps focus from windows
                     // a background process opens), and it measures drawing, not that limit.

@@ -94,7 +94,7 @@ impl ApplicationHandler for Missing {
             return;
         }
         let attributes = horizon_client::window::with_horizon_icon(
-            Window::default_attributes().with_title("Horizon"),
+            Window::default_attributes().with_title("𝓗𝓸𝓻𝓲𝔃𝓸𝓷 𝓑𝓸𝓭𝓴𝓪 𝓤𝓵𝓽𝓻𝓪"),
         )
         .with_inner_size(winit::dpi::LogicalSize::new(1040.0, 700.0));
         let made = event_loop

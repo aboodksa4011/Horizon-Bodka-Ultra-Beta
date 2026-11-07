@@ -52,6 +52,7 @@ impl Launcher {
         let actions = div()
             .mt(px(32.))
             .flex()
+            .when(horizon_launcher::i18n::is_rtl(), |d| d.flex_row_reverse())
             // One line, unlike the mockup's `flex-wrap`: at 1280 px the folder's ⋯ would wrap the
             // row away from under the pointer, which hides it again.
             .items_center()
@@ -89,7 +90,7 @@ impl Launcher {
                 .h(px(32.))
                 .px(px(12.))
                 .rounded(px(radius::CONTROL))
-                .font_family(horizon_theme::glass::FONT)
+                .font_family(crate::theme::font())
                 .text_size(px(13.))
                 .line_height(px(18.))
                 .child(icon)
@@ -120,6 +121,7 @@ impl Launcher {
             .flex()
             .items_center()
             .gap(px(4.))
+            .when(horizon_launcher::i18n::is_rtl(), |d| d.flex_row_reverse())
             .child(tab("Rust Edition", horizon, !java))
             .child(tab("Java Edition", java_icon, java))
     }
@@ -149,9 +151,11 @@ impl Launcher {
             return div();
         };
         let edit = instance.clone();
+        let branded = instance.name == horizon_launcher::branding::APP_NAME;
         div()
             .mt(px(20.))
             .flex()
+            .when(horizon_launcher::i18n::is_rtl(), |d| d.flex_row_reverse())
             .items_center()
             .gap(px(16.))
             .min_w_0()
@@ -170,9 +174,9 @@ impl Launcher {
                 div()
                     .min_w_0()
                     .truncate()
-                    .font_family(horizon_theme::glass::DISPLAY_FONT)
+                    .font_family(crate::theme::font())
                     .font_weight(FontWeight::SEMIBOLD)
-                    .text_size(px(64.))
+                    .text_size(px(if branded { 36. } else { 64. }))
                     .line_height(px(64.))
                     .text_color(white(ink::FULL))
                     .child(instance.name),
@@ -237,6 +241,7 @@ impl Launcher {
         ui::text(15., FontWeight::NORMAL, ink::STRONG)
             .mt(px(16.))
             .flex()
+            .when(horizon_launcher::i18n::is_rtl(), |d| d.flex_row_reverse())
             .flex_wrap()
             .gap(px(4.))
             .child(line)
@@ -337,7 +342,7 @@ impl Launcher {
                 .justify_center()
                 .gap(px(10.))
                 .pr(px(40.))
-                .font_family(horizon_theme::glass::FONT)
+                .font_family(crate::theme::font())
                 .text_size(px(18.))
                 .font_weight(FontWeight::SEMIBOLD)
                 .child(ui::icon(icon, 20., glyph))
@@ -363,7 +368,7 @@ impl Launcher {
                         .justify_center()
                         .pr(px(40.))
                         .text_color(on_accent)
-                        .font_family(horizon_theme::glass::FONT)
+                        .font_family(crate::theme::font())
                         .text_size(px(16.))
                         .font_weight(FontWeight::SEMIBOLD)
                         .child(match progress {
@@ -519,7 +524,15 @@ impl Launcher {
                 });
             }
             wrap = wrap.child(
-                deferred(div().absolute().top(px(TALL + 8.)).left_0().child(menu)).with_priority(1),
+                deferred(
+                    div()
+                        .absolute()
+                        .top(px(TALL + 8.))
+                        .when(horizon_launcher::i18n::is_rtl(), |d| d.right_0())
+                        .when(!horizon_launcher::i18n::is_rtl(), |d| d.left_0())
+                        .child(menu),
+                )
+                .with_priority(1),
             );
         }
         wrap
@@ -637,7 +650,15 @@ impl Launcher {
                 })),
             );
             wrap = wrap.child(
-                deferred(div().absolute().top(px(TALL + 8.)).left_0().child(menu)).with_priority(1),
+                deferred(
+                    div()
+                        .absolute()
+                        .top(px(TALL + 8.))
+                        .when(horizon_launcher::i18n::is_rtl(), |d| d.right_0())
+                        .when(!horizon_launcher::i18n::is_rtl(), |d| d.left_0())
+                        .child(menu),
+                )
+                .with_priority(1),
             );
         }
         wrap
@@ -780,7 +801,15 @@ impl Launcher {
                 })),
             );
             wrap = wrap.child(
-                deferred(div().absolute().top(px(TALL + 8.)).left_0().child(menu)).with_priority(1),
+                deferred(
+                    div()
+                        .absolute()
+                        .top(px(TALL + 8.))
+                        .when(horizon_launcher::i18n::is_rtl(), |d| d.right_0())
+                        .when(!horizon_launcher::i18n::is_rtl(), |d| d.left_0())
+                        .child(menu),
+                )
+                .with_priority(1),
             );
         }
         Some(wrap)
@@ -803,7 +832,7 @@ impl Launcher {
             .pr(px(pr))
             .rounded(px(radius::LARGE))
             .bg(white(if focused { 0.09 } else { 0.06 }))
-            .font_family(horizon_theme::glass::FONT)
+            .font_family(crate::theme::font())
             .text_size(px(14.))
             .text_color(white(ink::FULL))
             .cursor_text()

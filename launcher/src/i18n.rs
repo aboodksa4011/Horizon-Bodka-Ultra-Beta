@@ -617,6 +617,18 @@ pub fn current() -> Language {
     Language::ALL[CURRENT.load(Ordering::Relaxed) as usize % Language::ALL.len()]
 }
 
+/// Layout direction is independent of technical identifiers and editable file paths.
+pub fn is_rtl() -> bool {
+    matches!(
+        current(),
+        Language::Arabic
+            | Language::Hebrew
+            | Language::Persian
+            | Language::Urdu
+            | Language::Yiddish
+    )
+}
+
 type Table = HashMap<String, &'static str>;
 
 fn table(language: Language) -> &'static Table {
@@ -652,10 +664,29 @@ pub fn tr(en: &str) -> &str {
 
 /// `en` in the launcher's language with its `{name}` holes filled.
 pub fn trf(en: &str, args: &[(&str, &str)]) -> String {
-    let mut out = tr(en).to_string();
-    for (name, value) in args {
-        out = out.replace(&format!("{{{name}}}"), value);
+    trf_in(current(), en, args)
+}
+
+/// Format a translation without changing the process-wide language. Inserted values are
+/// literal: a file path or player name containing braces must never be formatted again.
+pub fn trf_in(language: Language, en: &str, args: &[(&str, &str)]) -> String {
+    let mut remaining = tr_in(language, en);
+    let mut out = String::with_capacity(remaining.len());
+    while let Some(start) = remaining.find('{') {
+        out.push_str(&remaining[..start]);
+        remaining = &remaining[start..];
+        let Some(end) = remaining.find('}') else {
+            break;
+        };
+        let name = &remaining[1..end];
+        if let Some((_, value)) = args.iter().find(|(key, _)| *key == name) {
+            out.push_str(value);
+        } else {
+            out.push_str(&remaining[..=end]);
+        }
+        remaining = &remaining[end + 1..];
     }
+    out.push_str(remaining);
     out
 }
 

@@ -28,6 +28,10 @@ const AT_ONCE: usize = 3;
 pub(super) enum Look {
     /// Fitted inside this many pixels square.
     Fit(u32),
+    /// A fitted custom background, with blur performed once off the UI thread.
+    Background(u32, u8),
+    /// User-supplied built-in GIF, with original frame timing. A static first frame for reduced motion.
+    BodkaFilm(u8, bool),
     /// Small and blurred (`glass_shot_blur`).
     Blurred,
 }
@@ -115,10 +119,11 @@ impl Launcher {
                 let (key, image) = task.await;
                 let _ = this.update(cx, |this, cx| {
                     this.pictures.making.remove(&key);
-                    let bytes = image
-                        .as_ref()
-                        .and_then(|i| i.as_bytes(0))
-                        .map_or(0, |b| b.len() as u64);
+                    let bytes = image.as_ref().map_or(0, |i| {
+                        (0..i.frame_count())
+                            .map(|f| i.as_bytes(f).map_or(0, |b| b.len() as u64))
+                            .sum()
+                    });
                     let gone = this.pictures.made.insert(key, image, bytes, Instant::now());
                     this.pictures.retire(gone);
                     cx.notify();
@@ -133,10 +138,39 @@ impl Launcher {
 /// Makes the picture as GPUI draws it (BGRA, as its own loader does). Runs off the UI thread.
 fn make(path: &Path, look: Look) -> Option<Arc<RenderImage>> {
     match look {
+        Look::BodkaFilm(blur, moving) => {
+            use image::AnimationDecoder;
+            let decoder = image::codecs::gif::GifDecoder::new(std::io::Cursor::new(
+                include_bytes!("../assets/bodka/cherry-sunset.gif"),
+            ))
+            .ok()?;
+            let frames = decoder
+                .into_frames()
+                .take(if moving { 75 } else { 1 })
+                .map(|frame| {
+                    let frame = frame.ok()?;
+                    let delay = frame.delay();
+                    let mut buffer = frame.into_buffer();
+                    if blur > 0 {
+                        buffer = image::imageops::blur(&buffer, f32::from(blur.min(48)));
+                    }
+                    for pixel in buffer.pixels_mut() {
+                        pixel.0.swap(0, 2);
+                    }
+                    Some(image::Frame::from_parts(buffer, 0, 0, delay))
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some(Arc::new(RenderImage::new(frames)))
+        }
         Look::Blurred => glass_shot_blur::blurred(path),
-        Look::Fit(max) => {
+        Look::Fit(max) | Look::Background(max, _) => {
             // Never above the GPU's limit, whatever the caller asked: GPUI's atlas can't hold it.
             let mut image = pictures::load_fitted(path, max.min(pictures::gpu_limit())).ok()?;
+            if let Look::Background(_, blur) = look {
+                if blur > 0 {
+                    image = image::imageops::blur(&image, f32::from(blur.min(48)));
+                }
+            }
             for p in image.pixels_mut() {
                 p.0.swap(0, 2);
             }

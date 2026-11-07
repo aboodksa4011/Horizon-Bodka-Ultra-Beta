@@ -57,7 +57,7 @@ pub fn open(mode: Mode, cx: &mut App) {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             window_min_size: Some(size(px(760.), px(520.))),
             titlebar: Some(titlebar::options()),
-            app_id: Some("horizon-launcher".into()),
+            app_id: Some(horizon_launcher::branding::APP_ID.into()),
             ..Default::default()
         },
         |window, cx| cx.new(|cx| Setup::new(mode, window, cx)),
@@ -396,7 +396,7 @@ impl Setup {
             .flex()
             .flex_col()
             .gap(px(18.))
-            .child(text(night::DISPLAY, c(n.ink)).child("Horizon"))
+            .child(text(night::DISPLAY, c(n.ink)).child(horizon_launcher::branding::APP_NAME))
             .child(body)
     }
 }

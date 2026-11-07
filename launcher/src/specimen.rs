@@ -89,7 +89,7 @@ pub fn render(t: &Theme) -> Div {
         ]
         .map(|(name, w)| {
             div()
-                .font_family(theme::FONT)
+                .font_family(crate::theme::font())
                 .font_weight(FontWeight(w))
                 .text_size(px(18.))
                 .text_color(ink)

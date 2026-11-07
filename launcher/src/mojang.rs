@@ -16,6 +16,9 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed};
 use std::sync::Mutex;
 use std::time::Duration;
 
+mod local_cache;
+pub(crate) use local_cache::LocalFiles;
+
 const OBJECTS: &str = "https://resources.download.minecraft.net";
 /// The index of Mojang's Java runtimes, the one the official launcher reads.
 const JAVA_RUNTIMES: &str = "https://launchermeta.mojang.com/v1/products/java-runtime/2ec0cc96c44e5a76b9c8b7c39df7210883d12871/all.json";
@@ -140,7 +143,7 @@ pub fn download(
             fetch_each(&objects, jobs, &retrying, cancel, log, false)
         });
     match assets {
-        Err(e) if e == CANCELLED => return Err(e),
+        Err(e) if e == CANCELLED || pins.client_sha1.is_empty() => return Err(e),
         Err(e) => log(format!("The sounds could not all be downloaded: {e}")),
         Ok(()) => {}
     }

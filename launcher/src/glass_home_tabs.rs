@@ -278,11 +278,20 @@ impl Launcher {
     fn patch_log(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         let horizon = self.selected_instance().is_some_and(|i| i.java.is_none());
         let played = horizon.then(|| self.selected().cloned()).flatten();
-        let (note, sections) = match &self.releases {
+        let (mut note, mut sections) = match &self.releases {
             Load::Ready(list) => patch_source(list, played.as_deref()),
             _ => None,
         }
         .unwrap_or_else(|| (tr("No notes yet").to_string(), Vec::new()));
+        let arabic = horizon_launcher::i18n::current() == horizon_launcher::i18n::Language::Arabic;
+        if arabic {
+            note = horizon_launcher::branding::APP_NAME.to_string();
+            sections = vec![(tr("Launcher").to_string(), vec![
+                tr("Arabic interface and game language by default.").to_string(),
+                tr("Connected Arabic letters, right-to-left layout and readable version identifiers.").to_string(),
+                tr("Clear Arabic guidance when Minecraft files are missing.").to_string(),
+            ])];
+        }
         let many = sections.len() > 1;
         let list =
             div()
@@ -339,7 +348,11 @@ impl Launcher {
                     .items_baseline()
                     .justify_between()
                     .gap(px(12.))
-                    .child(card_title(tr("Patch log")))
+                    .child(card_title(tr(if arabic {
+                        "BODKA launcher changes"
+                    } else {
+                        "Patch log"
+                    })))
                     .child(
                         ui::text(13., FontWeight::NORMAL, ink::NOTE)
                             .id("patch-log-all")

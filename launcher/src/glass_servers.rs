@@ -204,7 +204,7 @@ impl Launcher {
                     .rounded(px(radius::LARGE))
                     .bg(ui::color(look.accent))
                     .text_color(ui::color(look.on_accent))
-                    .font_family(horizon_theme::glass::FONT)
+                    .font_family(crate::theme::font())
                     .text_size(px(15.))
                     .font_weight(FontWeight::SEMIBOLD)
                     .cursor_pointer()
@@ -255,7 +255,7 @@ impl Launcher {
                             .child(
                                 div()
                                     .truncate()
-                                    .font_family(horizon_theme::glass::DISPLAY_FONT)
+                                    .font_family(crate::theme::font())
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .text_size(px(43.5))
                                     .line_height(px(43.5))

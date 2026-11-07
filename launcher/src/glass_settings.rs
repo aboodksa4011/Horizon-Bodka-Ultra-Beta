@@ -13,7 +13,8 @@ use crate::glass_ui::{self as ui, white};
 use horizon_theme::glass::{fill, ink, radius};
 
 /// The list's entries: name and icon. The mockup's seven, then data collection.
-const SECTIONS: [(&str, &str); 8] = [
+const SECTIONS: [(&str, &str); 9] = [
+    ("BODKA personalization", "sliders-horizontal"),
     ("Account", "user"),
     ("Updates", "refresh"),
     ("Launcher", "computer"),
@@ -101,6 +102,9 @@ impl Launcher {
         self.settings_marked = active;
         let nav =
             card()
+                .id("settings-sections")
+                .max_h_full()
+                .overflow_y_scroll()
                 .flex_none()
                 .w(px(210.))
                 .gap(px(4.))
@@ -112,11 +116,11 @@ impl Launcher {
                             .flex()
                             .items_center()
                             .gap(px(12.))
-                            .h(px(40.))
+                            .h(px(40.)).flex_none()
                             .px(px(12.))
                             .rounded(px(radius::ROW))
                             .cursor_pointer()
-                            .font_family(horizon_theme::glass::FONT)
+                            .font_family(crate::theme::font())
                             .text_size(px(14.))
                             .when(on, |d| {
                                 d.bg(white(fill::ACTIVE))
@@ -141,7 +145,7 @@ impl Launcher {
                     )
                     .on_click(cx.listener(
                         move |this, _: &ClickEvent, _, cx| {
-                            this.settings_pane.scroll_to_top_of_item(i);
+                            this.settings_pane.handle.scroll_to_top_of_item(i);
                             cx.notify();
                         },
                     ))
@@ -152,7 +156,7 @@ impl Launcher {
             .min_w_0()
             .h_full()
             .overflow_y_scroll()
-            .track_scroll(&self.settings_pane)
+            .min_h_0()
             // A scroll redraws the pane from its layer without rendering the page again, so the
             // list follows it here: on the next frame, once the offset has moved, and only when
             // the section changed.
@@ -168,7 +172,7 @@ impl Launcher {
             .flex_col()
             .gap(px(16.))
             .pb(px(8.))
-            .children(sections);
+            .children(sections.into_iter().map(|section| section.flex_none()));
         div()
             .flex()
             .flex_col()
@@ -182,11 +186,12 @@ impl Launcher {
                 div()
                     .flex()
                     .items_start()
+                    .when(i18n::is_rtl(), |d| d.flex_row_reverse())
                     .gap(px(12.))
                     .flex_1()
                     .min_h_0()
                     .child(nav)
-                    .child(pane),
+                    .child(self.settings_pane.wrap(pane, &t).flex_1().h_full()),
             )
     }
 
@@ -195,17 +200,17 @@ impl Launcher {
     /// the scroll is taken off them here. Reading them as they were left the list on the first
     /// section until the pane hit its end.
     fn settings_section(&self, count: usize) -> usize {
-        let pane = self.settings_pane.bounds();
-        let scrolled = -self.settings_pane.offset().y;
+        let pane = self.settings_pane.handle.bounds();
+        let scrolled = -self.settings_pane.handle.offset().y;
         let tops: Vec<f32> = (0..count)
-            .map_while(|i| self.settings_pane.bounds_for_item(i))
+            .map_while(|i| self.settings_pane.handle.bounds_for_item(i))
             .map(|b| f32::from(b.top() - pane.top() - scrolled))
             .collect();
         spy(
             &tops,
             f32::from(pane.size.height),
             f32::from(scrolled),
-            f32::from(self.settings_pane.max_offset().y),
+            f32::from(self.settings_pane.handle.max_offset().y),
         )
     }
 
@@ -474,7 +479,8 @@ impl Launcher {
             })
             .children(self.dev_options_section(cx));
         let data = card().child(self.collection_section(cx));
-        vec![account, updates, launcher, network, game, ai, about, data]
+        let bodka = self.bodka_settings_card(cx);
+        vec![bodka, account, updates, launcher, network, game, ai, about, data]
     }
 }
 

@@ -294,7 +294,7 @@ fn list_in(game_home: &Path, data: &Path) -> Vec<Instance> {
     let mut store = Store::load(data);
     let mut found = vec![(
         DEFAULT.to_string(),
-        "Horizon".to_string(),
+        crate::branding::APP_NAME.to_string(),
         Kind::Default,
         game_home.to_path_buf(),
         game_home.to_path_buf(),
@@ -689,6 +689,7 @@ pub fn apply(cmd: &mut Command, instance: &Instance) -> Result<(), String> {
         Kind::Port | Kind::Pack => modpacks::apply_profile(cmd, &instance.work)?,
     }
     follow_player(&backend::game_home(), &instance.home);
+    crate::branding::initialize_game_language(&instance.home).map_err(|error| error.to_string())?;
     Ok(())
 }
 

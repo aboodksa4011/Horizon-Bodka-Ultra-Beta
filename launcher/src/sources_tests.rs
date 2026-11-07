@@ -478,6 +478,39 @@ fn relinking_follows_the_launcher_the_files_now_come_from() {
 }
 
 #[test]
+fn arabic_missing_game_reports_metadata_only_and_keeps_paths_and_version() {
+    let s = Scratch::new("arabic-missing-game");
+    let chosen = s.0.join("عالمي {version}");
+    let manifest = chosen.join("versions/26.3/26.3.json");
+    fs::create_dir_all(manifest.parent().unwrap()).unwrap();
+    fs::write(&manifest, MANIFEST).unwrap();
+    let missing = find_in(Language::Arabic, &chosen, &pins()).unwrap_err();
+    assert_eq!(missing, "ملف لعبة Minecraft 26.3 بصيغة JAR غير موجود");
+    let message = not_found_in(
+        Language::Arabic,
+        "26.3",
+        &[(chosen.clone(), missing)],
+        &chosen,
+    );
+    assert!(message.starts_with("لم يتم العثور على ملفات Minecraft 26.3."));
+    assert!(message.contains(&chosen.display().to_string()));
+    assert!(message.contains("لإكمال التشغيل:"));
+    assert!(message.contains("شغّل الإصدار 26.3 مرة واحدة"));
+    assert!(message.contains("--minecraft"));
+    assert!(!message.contains("To fix it"));
+    assert_eq!(fs::read(&manifest).unwrap(), MANIFEST);
+    assert!(!chosen.join("versions/26.3/26.3.jar").exists());
+
+    let prism = s.0.join("PrismLauncher/instances/عالمي");
+    assert!(not_found_in(Language::Arabic, "26.3", &[], &prism)
+        .contains("شغّل نسخة 26.3 مرة واحدة من Prism Launcher"));
+    assert_eq!(
+        find_in(Language::Arabic, &prism, &pins()).unwrap_err(),
+        "المجلد غير موجود"
+    );
+}
+
+#[test]
 fn nothing_found_lists_every_folder_and_what_it_lacks() {
     let s = Scratch::new("nothing");
     let chosen = s.0.join("chosen");

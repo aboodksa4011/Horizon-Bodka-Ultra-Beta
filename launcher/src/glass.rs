@@ -60,6 +60,7 @@ const LIGHT_GLASS: f32 = 0.84;
 const LIGHT_FLOAT: f32 = 0.94;
 
 thread_local! {
+    static BODKA: Cell<Option<horizon_launcher::bodka_settings::Palette>> = const { Cell::new(None) };
     static PIECES: RefCell<Pieces> = RefCell::new(Pieces {
         backdrop: None,
         look: Glass::default_look(),
@@ -75,6 +76,8 @@ thread_local! {
         full_generation: 0,
     });
 }
+
+pub fn set_bodka(palette: Option<horizon_launcher::bodka_settings::Palette>) { BODKA.set(palette); }
 
 /// Performance mode's plates: solid, with no glass behind them.
 pub fn set_plain(plain: bool) {
@@ -171,6 +174,13 @@ pub fn begin_build(window: &mut Window) {
 /// A plate's backdrop with its corners: put it first inside a `relative` element, the content
 /// after it. In performance mode it is a solid colour: no backdrop, no glass.
 pub fn backdrop(kind: Kind, radius: f32) -> AnyElement {
+    if let Some(p) = BODKA.get() {
+        return div().absolute().top_0().left_0().size_full().rounded(px(radius.min(p.radius)))
+            .bg(rgb(p.panel).opacity(if kind == Kind::Float { 0.99 } else {p.opacity}))
+            .border_1().border_color(rgb(p.accent).opacity(0.13))
+            .shadow(vec![gpui::BoxShadow {color:gpui::black().opacity(p.shadow),offset:gpui::point(px(0.),px(4.)),blur_radius:px(14.),spread_radius:px(0.),inset:false}])
+            .into_any_element();
+    }
     let (plain, look) = PIECES.with_borrow(|p| (p.plain, p.look));
     if plain {
         return div()

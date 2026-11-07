@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="288" height="56" viewBox="0 0 288 56" role="img" aria-label="تحميل نسخة ويندوز x64">
+  <rect x=".75" y=".75" width="286.5" height="54.5" rx="9" fill="#30241d" stroke="#bd946f" stroke-width="1.5"/>
+  <path d="M22 17h10v10H22zm12 0h10v10H34zM22 29h10v10H22zm12 0h10v10H34z" fill="#efc9a3"/>
+  <text x="155" y="36" fill="#fff5e9" text-anchor="middle" direction="rtl" font-size="20" font-family="Segoe UI,Tahoma,sans-serif" font-weight="600">تحميل نسخة ويندوز</text>
+  <g transform="translate(252 18)" fill="none" stroke="#efc9a3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 0v13m-5-5 5 5 5-5M0 17v3h14v-3"/></g>
+</svg>

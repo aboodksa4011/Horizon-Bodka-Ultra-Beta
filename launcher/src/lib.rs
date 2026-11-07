@@ -2,12 +2,16 @@
 pub mod account;
 pub mod agents;
 pub mod backend;
+pub mod branding;
+pub mod bodka_settings;
 pub mod browser;
 pub mod build_import;
 pub mod data_location;
 pub mod datapacks;
 pub mod desktop;
 pub mod desktop_seams;
+pub mod downloads;
+pub mod dual;
 pub mod export;
 #[cfg(unix)]
 pub mod game_app;

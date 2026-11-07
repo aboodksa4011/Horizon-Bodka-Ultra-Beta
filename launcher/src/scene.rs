@@ -1,7 +1,7 @@
 //! The pixel sunset behind the glass look: a port of the website's `HorizonScene`
 //! (horizon-site `components/horizon-scene.tsx`, as the launcher mockup draws it with
 //! `wideSun={{ x: 0.72, scale: 1.1, rise: 0.1 }}`), with its seeds, its random draws in the same
-//! order and its colour sums, so the same window size gives the same picture.
+//! order and its colour sums. BODKA keeps the geometry and uses an emerald palette.
 //!
 //! The website paints two canvases each frame. Here the parts that never move (the sky's
 //! gradients, the sun's halo, the three ridges with their trees and fog) are baked into images
@@ -27,8 +27,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 const SKY: [u32; 15] = [
-    0x0a0919, 0x0f0c28, 0x151136, 0x1d1444, 0x281850, 0x361b5b, 0x481e66, 0x5d236e, 0x752873,
-    0x902f76, 0xab3a75, 0xc64a71, 0xde5f6a, 0xef7c63, 0xf89d62,
+    0x090b0e, 0x0b1014, 0x0d161a, 0x101d22, 0x102a2a, 0x123a35, 0x154b41, 0x185e4d, 0x1a725b,
+    0x1d8869, 0x209e78, 0x22b58b, 0x22c997, 0x38d8ac, 0x38e4ba,
 ];
 const SKY_STEPS: usize = SKY.len() - 4;
 /// The sky gradient's stop positions, `(i / SKY_STEPS)^(1 / 2.3)`: `sky_rgb` runs once per
@@ -39,13 +39,13 @@ static SKY_STOPS: std::sync::LazyLock<[f64; SKY_STEPS + 1]> = std::sync::LazyLoc
 const SUN: [u32; 7] = [
     0xfff5d2, 0xffe4a0, 0xffca78, 0xffac5f, 0xff8c58, 0xfb6c62, 0xee5277,
 ];
-const HALO: u32 = 0xff8d6a;
-const FOG: u32 = 0xe0697c;
-const RIM: u32 = 0xffb27c;
-const CLOUD_HIGH: u32 = 0x5f2c7c;
-const CLOUD_LOW: u32 = 0xc95985;
-const CLOUD_TOP: u32 = 0xf3a6bd;
-const FIREFLY: u32 = 0xffd98c;
+const HALO: u32 = 0x22c997;
+const FOG: u32 = 0x167568;
+const RIM: u32 = 0x38e4ba;
+const CLOUD_HIGH: u32 = 0x16493e;
+const CLOUD_LOW: u32 = 0x217d65;
+const CLOUD_TOP: u32 = 0x72d9b5;
+const FIREFLY: u32 = 0x38e4ba;
 const STAR_COOL: u32 = 0xd2c8ff;
 const STAR_WARM: u32 = 0xfff3e4;
 const MARGIN: i32 = 20;
@@ -1459,9 +1459,9 @@ mod tests {
 
     /// The website's own code (horizon-scene.tsx's `rng`, `buildScene`, `renderPixels`, run in
     /// Node at 1280 × 772) gave these: the first draws of seed 7, the scene's measures, each cloud's
-    /// row, size and mask sum, and an FNV-1a hash of its whole pixel buffer at 0 s and 5.3 s.
+    /// row, size and mask sum. The FNV-1a snapshots at 0 s and 5.3 s use BODKA's emerald palette.
     #[test]
-    fn the_scene_matches_the_website_pixel_for_pixel() {
+    fn the_scene_keeps_the_original_geometry_with_bodkas_palette() {
         let mut r = Rng(7);
         let draws: Vec<f64> = (0..3).map(|_| r.next()).collect();
         assert_eq!(
@@ -1496,8 +1496,10 @@ mod tests {
                 (139, 36, 6, 225)
             ]
         );
-        assert_eq!(fnv(&composite(&m, 0.)), 0xa8f0b1c50b378d7a);
-        assert_eq!(fnv(&composite(&m, 5.3)), 0x6c05b4e8bdbbd1fc);
+        assert_eq!(
+            (fnv(&composite(&m, 0.)), fnv(&composite(&m, 5.3))),
+            (4_949_975_569_834_329_148, 9_005_133_896_549_659_110)
+        );
     }
 
     /// The pixel layer as the website's buffer holds it (`-1` empty), built from what this module

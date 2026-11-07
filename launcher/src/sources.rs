@@ -5,6 +5,7 @@
 //! files found elsewhere are linked into that layout in the launcher's data folder, with the
 //! pinned version JSON from Mojang when the other launcher keeps its own rewrite of it.
 
+use crate::i18n::{self, tr, tr_in, trf, trf_in, Language};
 use serde_json::Value;
 use sha1::{Digest, Sha1};
 use std::fs;
@@ -279,8 +280,12 @@ fn launcher_of(path: &Path) -> Option<&'static str> {
 /// `libraries` is the folder itself or its `meta` (Modrinth App), `data` (GDLauncher) or
 /// `datastore` (GDLauncher Next) or `cache/minecraft` (Dawn Client).
 pub fn find(dir: &Path, pins: &Pins) -> Result<Found, String> {
+    find_in(i18n::current(), dir, pins)
+}
+
+fn find_in(language: Language, dir: &Path, pins: &Pins) -> Result<Found, String> {
     if !dir.is_dir() {
-        return Err("the folder doesn't exist".into());
+        return Err(tr_in(language, "the folder doesn't exist").into());
     }
     let v = &pins.version;
     let mut other = None;
@@ -307,11 +312,22 @@ pub fn find(dir: &Path, pins: &Pins) -> Result<Found, String> {
         }
     }
     Err(match other {
-        Some(jar) => format!(
-            "{} is not the {v} release Horizon was made for",
-            jar.strip_prefix(dir).unwrap_or(&jar).display()
+        Some(jar) => trf_in(
+            language,
+            "{file} is not the {version} release Horizon was made for",
+            &[
+                (
+                    "file",
+                    &jar.strip_prefix(dir).unwrap_or(&jar).display().to_string(),
+                ),
+                ("version", v),
+            ],
         ),
-        None => format!("no Minecraft {v} client jar"),
+        None => trf_in(
+            language,
+            "no Minecraft {version} client jar",
+            &[("version", v)],
+        ),
     })
 }
 
@@ -320,23 +336,40 @@ pub fn find(dir: &Path, pins: &Pins) -> Result<Found, String> {
 /// launcher Horizon knows, the advice names it: a Prism or MultiMC instance downloads the game
 /// only when it is launched once.
 pub fn not_found(version: &str, checked: &[(PathBuf, String)], chosen: &Path) -> String {
-    let mut text = format!("Minecraft {version} was not found. Horizon looked in:");
+    not_found_in(i18n::current(), version, checked, chosen)
+}
+
+fn not_found_in(
+    language: Language,
+    version: &str,
+    checked: &[(PathBuf, String)],
+    chosen: &Path,
+) -> String {
+    let mut text = trf_in(
+        language,
+        "Minecraft {version} was not found. Horizon looked in:",
+        &[("version", version)],
+    );
     for (dir, missing) in checked {
         text += &format!("\n  {} ({missing})", dir.display());
     }
-    text += "\nTo fix it:";
+    text += tr_in(language, "\nTo fix it:");
     text += &match launcher_of(chosen) {
-        Some(launcher) => format!(
+        Some(launcher) => trf_in(
+            language,
             "\n  • Launch the {version} instance once in {launcher} so it downloads the game, \
              then prepare again.\n  \
              • Or choose the folder {launcher} keeps Minecraft {version} in (Minecraft folder › \
-             Choose… in the launcher, --minecraft on the command line)."
+             Choose… in the launcher, --minecraft on the command line).",
+            &[("version", version), ("launcher", tr_in(language, launcher))],
         ),
-        None => format!(
+        None => trf_in(
+            language,
             "\n  • Play {version} once in the official Minecraft launcher, or in Prism Launcher, \
              MultiMC, the Modrinth App, ATLauncher, GDLauncher or Dawn Client, then prepare again.\n  \
              • Or choose the folder where your launcher keeps Minecraft {version} (Minecraft \
-             folder › Choose… in the launcher, --minecraft on the command line)."
+             folder › Choose… in the launcher, --minecraft on the command line).",
+            &[("version", version)],
         ),
     };
     text
@@ -394,16 +427,19 @@ pub fn resolve(
         }
         match find(dir, pins) {
             Ok(f) => found = Some((name, f)),
-            Err(missing) => checked.push((dir.clone(), format!("{name}: {missing}"))),
+            Err(missing) => checked.push((dir.clone(), format!("{}: {missing}", tr(name)))),
         }
     }
     let Some((name, found)) = found else {
         return Ok(Resolved::NotFound(checked));
     };
-    log(format!(
-        "Using Minecraft {} from {name} ({})",
-        pins.version,
-        found.base.display()
+    log(trf(
+        "Using Minecraft {version} from {name} ({folder})",
+        &[
+            ("version", &pins.version),
+            ("name", tr(name)),
+            ("folder", &found.base.display().to_string()),
+        ],
     ));
     if found.official_layout(&pins.version) {
         return Ok(Resolved::Folder(found.base));

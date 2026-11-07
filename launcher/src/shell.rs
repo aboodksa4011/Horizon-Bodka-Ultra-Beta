@@ -256,7 +256,7 @@ pub fn action(id: impl Into<SharedString>, kind: Action, t: &Theme) -> Stateful<
         .justify_center()
         .gap(px(10.))
         .px(px(16.))
-        .font_family(theme::FONT)
+        .font_family(crate::theme::font())
         .font_weight(FontWeight::MEDIUM)
         .text_size(px(night::UI.px))
         .cursor_pointer();
