@@ -24,6 +24,8 @@ impl Launcher {
             .find(|tab| *tab == self.home_tab)
             .unwrap_or(HomeTab::Overview);
         let strip = div()
+            .when(i18n::is_rtl(), |d| d.flex_row_reverse())
+            .flex_wrap()
             .relative()
             .flex()
             .flex_none()
@@ -69,25 +71,47 @@ impl Launcher {
                 .map(IntoElement::into_any_element),
             HomeTab::Console => self.glass_console(cx).map(IntoElement::into_any_element),
         };
-        div()
-            .relative()
-            // `mt-12` under the head, of which Home's own gap gives 28.
-            .mt(px(20.))
-            .child(crate::glass::tabbed(self.home_strip.clone()))
-            .child(div().relative().flex().child(strip))
-            .child(
-                div().relative().p(px(8.)).child(
+        let library = self.page == Page::Library;
+        let mut panel = div().relative().mt(px(if library { 4. } else { 20. }));
+        if library {
+            panel = panel
+                .rounded(px(16.))
+                .overflow_hidden()
+                .child(crate::glass::backdrop(crate::glass::Kind::Glass, 16.))
+                .child(
                     div()
-                        .flex()
-                        .flex_col()
-                        .gap(px(12.))
-                        .min_h(px(BODY))
-                        .px(px(4.))
-                        .pt(px(8.))
-                        .pb(px(4.))
-                        .children(body),
-                ),
+                        .absolute()
+                        .size_full()
+                        .rounded(px(16.))
+                        .bg(gpui::rgb(0x254c38).opacity(0.37)),
+                );
+        } else {
+            panel = panel.child(crate::glass::tabbed(self.home_strip.clone()));
+        }
+        panel
+            .child(
+                div()
+                    .relative()
+                    .flex()
+                    .when(library, |d| {
+                        d.bg(gpui::rgb(0x345d46).opacity(0.36))
+                            .w_full()
+                            .when(i18n::is_rtl(), |d| d.justify_end())
+                    })
+                    .child(strip),
             )
+            .child(
+                div()
+                    .relative()
+                    .flex()
+                    .flex_col()
+                    .gap(px(12.))
+                    .min_h(px(BODY))
+                    .px(px(12.))
+                    .py(px(10.))
+                    .children(body),
+            )
+            .children(library.then(|| self.library_actions(cx)).flatten())
     }
 
     /// Overview: the last screenshots and the patch log side by side, then `rows`.

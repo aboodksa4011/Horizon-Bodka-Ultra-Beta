@@ -7,6 +7,9 @@ description = "Downloads, prepares and starts Horizon builds"
 
 [workspace]
 
+[features]
+visual-tests = ["gpui_platform/test-support"]
+
 [dependencies]
 # The catalog and mod-owned trait injections share their generation rules.
 horizon-mod-api-gen = { path = "../crates/horizon-mod-api-gen" }
@@ -95,10 +98,11 @@ security-framework = "3"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["NSAccessibility", "NSAppearance", "NSView", "NSWindow", "NSWorkspace"] }
 raw-window-handle = "0.6"
 [target.'cfg(target_os = "windows")'.dependencies]
+wry = { version = "0.57.1", default-features = false }
 keyring = { version = "3", features = ["windows-native"] }
 # Java's heap slider reads the computer's memory; the uninstaller hides its running copy; an
 # abandoned launcher update is one whose process has gone. Already in the lockfile.
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_SystemInformation", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging", "Win32_Media_Audio"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_SystemInformation", "Win32_System_Threading", "Win32_System_JobObjects", "Win32_Security", "Win32_UI_WindowsAndMessaging", "Win32_Media_Audio"] }
 # Shortcuts written by the shell itself (shortcut::write_windows_link): the hand-laid Shell Link has
 # no target ID list, so Explorer shows an empty target and starts nothing.
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Com", "Win32_UI_Shell"] }

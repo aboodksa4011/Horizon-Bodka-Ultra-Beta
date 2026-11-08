@@ -115,7 +115,7 @@ impl Launcher {
         .detach();
     }
 
-    fn play_pack(&mut self, work: PathBuf) {
+    pub(super) fn play_pack(&mut self, work: PathBuf) {
         // The pack's instance plays its own version, if it has one.
         let pack = self.instances.list.iter().find(|i| i.work == work);
         let Some(tag) = pack

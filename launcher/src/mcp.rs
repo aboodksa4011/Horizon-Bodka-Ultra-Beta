@@ -205,7 +205,7 @@ impl Session {
                 Ok(serde_json::to_string_pretty(&json!({
                     "accounts": accounts.accounts.iter().map(|a| json!({ "name": a.name, "uuid": a.uuid, "authentication": account::session::status(account::store(), &a.uuid) })).collect::<Vec<_>>(),
                     "plays_as": accounts.selected().map(|a| a.name.clone()),
-                    "sign_in_configured": account::client_id().is_some(),
+                    "sign_in_configured": account::sign_in_available(),
                     // Sign-ins outlast the launcher: in the keychain, or in the secrets file
                     // where it refused them (`secrets_file`: the file holds a sign-in).
                     "keychain": account::store().persistent(),
@@ -217,7 +217,7 @@ impl Session {
                 .unwrap())
             }
             "account_sign_in" => {
-                account::client_id().ok_or(account::NOT_CONFIGURED)?;
+                if !account::sign_in_available() { return Err(account::NOT_CONFIGURED.into()); }
                 if let Some(s) = self.sign_in.take() {
                     s.cancel();
                 }

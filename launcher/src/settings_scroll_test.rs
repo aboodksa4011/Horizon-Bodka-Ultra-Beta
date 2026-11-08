@@ -1,7 +1,127 @@
-//! Opt-in real GPUI layout and wheel regression. The test window is hidden.
+//! Opt-in real GPUI regressions with isolated data and hidden Windows surfaces.
 use super::*;
 use gpui::{point, AnyWindowHandle, PlatformInput, ScrollDelta, ScrollEvent};
 use std::sync::Arc;
+
+#[test]
+#[cfg(windows)]
+#[ignore = "requires an isolated BODKA_TEST_SCRATCH profile and Windows graphics"]
+fn create_library_edit_and_return_on_windows() {
+    let scratch = std::path::PathBuf::from(
+        std::env::var_os("BODKA_TEST_SCRATCH").expect("isolated test profile"),
+    );
+    assert!(
+        backend::data_dir().starts_with(&scratch) && backend::game_home().starts_with(&scratch)
+    );
+    let observed = Arc::new(Mutex::new(false));
+    let result = observed.clone();
+    gpui_platform::application()
+        .with_assets(blocks::Assets)
+        .run(move |cx| {
+            let handle = cx
+                .open_window(
+                    WindowOptions {
+                        window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
+                            None,
+                            size(px(960.), px(600.)),
+                            cx,
+                        ))),
+                        show: false,
+                        focus: false,
+                        ..Default::default()
+                    },
+                    |window, cx| {
+                        cx.new(|cx| {
+                            let mut app = Launcher::new(window, cx);
+                            app.opening = None;
+                            app.collection.consent.answer(Default::default());
+                            app.owner = Some(false);
+                            app.page = Page::Dashboard;
+                            app
+                        })
+                    },
+                )
+                .unwrap();
+            let any: AnyWindowHandle = handle.into();
+            cx.spawn(async move |cx| {
+                cx.background_executor()
+                    .timer(Duration::from_millis(150))
+                    .await;
+                any.update(cx, |view, w, cx| {
+                    w.resize(size(px(960.), px(600.)));
+                    let e = view.downcast::<Launcher>().ok().unwrap();
+                    w.draw(cx).clear(cx);
+                    e.update(cx, |app, cx| {
+                        assert_eq!(app.instances.list.len(), 1);
+                        assert!(!app.instances.default_has_worlds);
+                        app.open_instance_dialog(None);
+                        cx.notify();
+                    });
+                    w.refresh();
+                    w.draw(cx).clear(cx);
+                    e.update(cx, |app, cx| {
+                        app.change(|j| {
+                            j.kind = new_instance::NewKind::Vanilla;
+                            j.version = Some("1.20.1".into());
+                        });
+                        app.servers
+                            .text(servers_page::Field::InstanceName)
+                            .set("مكتبتي".into());
+                        app.save_instance(cx);
+                    });
+                })
+                .unwrap();
+                for _ in 0..200 {
+                    cx.background_executor()
+                        .timer(Duration::from_millis(50))
+                        .await;
+                    let done = any
+                        .update(cx, |view, w, cx| {
+                            let e = view.downcast::<Launcher>().ok().unwrap();
+                            if e.read(cx).instances.dialog.is_some() {
+                                return false;
+                            }
+                            e.update(cx, |app, cx| {
+                                let i = app.selected_instance().unwrap();
+                                assert_eq!(i.name, "مكتبتي");
+                                assert_eq!(i.java.as_ref().unwrap().minecraft, "1.20.1");
+                                assert!(matches!(app.page, Page::Dashboard));
+                                app.show_page(Page::Library);
+                                cx.notify();
+                            });
+                            w.refresh();
+                            w.draw(cx).clear(cx);
+                            e.update(cx, |app, cx| {
+                                app.show_page(Page::Mods);
+                                cx.notify();
+                            });
+                            w.refresh();
+                            w.draw(cx).clear(cx);
+                            e.update(cx, |app, cx| {
+                                assert!(app.library.browsing_library());
+                                app.show_page(Page::Library);
+                                app.show_page(Page::Dashboard);
+                                cx.notify();
+                            });
+                            w.refresh();
+                            w.draw(cx).clear(cx);
+                            true
+                        })
+                        .unwrap();
+                    if done {
+                        *result.lock().unwrap() = true;
+                        break;
+                    }
+                }
+                cx.update(|cx| cx.quit());
+            })
+            .detach();
+        });
+    assert!(
+        *observed.lock().unwrap(),
+        "the library persisted and its pages rendered"
+    );
+}
 
 #[test]
 #[cfg(windows)]

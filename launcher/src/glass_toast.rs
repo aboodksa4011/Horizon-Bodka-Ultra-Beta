@@ -12,7 +12,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 /// How long a line stays (`setTimeout(…, 4200)`).
-const SHOWN: Duration = Duration::from_millis(4200);
+const SHOWN: Duration = Duration::from_secs(3);
 
 /// The line, when it was said, and its number (a new one restarts the 4.2 s).
 static LINE: Mutex<Option<(String, Instant, u64)>> = Mutex::new(None);
@@ -84,7 +84,7 @@ impl Launcher {
                 .absolute()
                 .left(px(16.))
                 .right(px(16.))
-                .bottom(px(16.))
+                .top(px(58.))
                 .child(
                     crate::glass::float(20.)
                         .px(px(16.))

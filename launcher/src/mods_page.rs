@@ -42,7 +42,7 @@ mod glass_mods;
 
 pub(super) enum Event {
     /// A search's answer, for the search it was (stale answers are dropped) at that offset.
-    Found(u64, usize, Result<Vec<Project>, String>),
+    Found(u64, usize, usize, bool, Result<Vec<Project>, String>),
     Progress(String, f32),
     Done(Result<String, String>, bool),
     Updates(HashMap<(SourceId, String), String>),
@@ -68,13 +68,24 @@ pub(super) enum Checking {
     Failed(String),
 }
 
+#[derive(Clone, PartialEq)]
+struct InstallTarget {
+    source: SourceId,
+    id: String,
+    home: PathBuf,
+    world: Option<PathBuf>,
+}
+struct QueuedInstall {
+    target: InstallTarget,
+    run: Box<dyn FnOnce() + Send>,
+}
 pub(super) struct Mods {
     pub(super) kind: PackKind,
     pub(super) source: SourceId,
     text: LineEdit,
     focus: FocusHandle,
     pub(super) focused: bool,
-    everything: bool,
+    pub(super) everything: bool,
     /// Which search is the current one; answers for older ones are dropped.
     search: u64,
     searching: bool,
@@ -84,6 +95,11 @@ pub(super) struct Mods {
     installed_list: cull::Cull,
     pub(super) report_list: cull::Cull,
     more: bool,
+    queue: VecDeque<QueuedInstall>,
+    current: Option<InstallTarget>,
+    next_offset: usize,
+    strict: bool,
+    search_generation: std::sync::Arc<std::sync::atomic::AtomicU64>,
     error: Option<String>,
     pub(super) installed: Vec<installed::Entry>,
     loaded: bool,
@@ -129,6 +145,36 @@ pub(super) struct Mods {
 }
 
 impl Mods {
+    fn install_target(&self, source: SourceId, id: &str, kind: PackKind) -> InstallTarget {
+        InstallTarget {
+            source,
+            id: id.into(),
+            home: self.home(),
+            world: if kind == PackKind::DataPack {
+                self.world.clone()
+            } else {
+                None
+            },
+        }
+    }
+    fn scheduled(&self, p: &Project) -> bool {
+        let target = self.install_target(p.source, &p.id, p.kind);
+        self.current.as_ref() == Some(&target) || self.queue.iter().any(|q| q.target == target)
+    }
+    fn next_install(&mut self) {
+        if self.busy.is_some() {
+            return;
+        }
+        if let Some(job) = self.queue.pop_front() {
+            self.busy = Some((job.target.id.clone(), tr("Installing").into(), 0.));
+            self.current = Some(job.target);
+            std::thread::spawn(job.run);
+        }
+    }
+    pub(super) fn refresh_manifest(&mut self) {
+        self.loaded = false;
+    }
+
     pub(super) fn reset_lists(&self) {
         self.results_list.reset();
         self.installed_list.reset();
@@ -186,6 +232,9 @@ impl Mods {
             installed_list: cull::Cull::default(),
             report_list: cull::Cull::default(),
             more: false,
+            next_offset: 0,
+            strict: false,
+            search_generation: Default::default(),
             error: None,
             installed: Vec::new(),
             loaded: false,
@@ -195,6 +244,8 @@ impl Mods {
             worlds: Vec::new(),
             world: None,
             busy: None,
+            queue: VecDeque::new(),
+            current: None,
             message: None,
             native_notice: None,
             native_state: Default::default(),
@@ -243,7 +294,11 @@ impl Mods {
     /// How well a result runs: a Java mod's from its check once it has one. In a Java
     /// instance, a result was searched for its version and loader: installing checks the file.
     pub(super) fn support(&self, p: &Project) -> Support {
-        if self.java_for(p.kind).is_some() {
+        if self.java_for(p.kind).is_some()
+            || (self.strict
+                && self.java.is_some()
+                && matches!(p.kind, PackKind::Modpack | PackKind::DataPack))
+        {
             return Support::Works;
         }
         let metadata = p.support();
@@ -341,13 +396,16 @@ impl Launcher {
                         p.mods = found;
                     }
                 }
-                Event::Found(search, offset, result) if search == m.search => {
+                Event::Found(search, offset, next, more, result) if search == m.search => {
                     m.searching = false;
                     m.searched = true;
                     match result {
                         Ok(found) => {
-                            m.more = found.len() == PAGE;
-                            m.results.truncate(offset);
+                            m.more = more;
+                            m.next_offset = next;
+                            if offset == 0 {
+                                m.results.clear();
+                            }
                             if offset == 0 {
                                 m.results_list.reset();
                             }
@@ -375,6 +433,8 @@ impl Launcher {
                 Event::Done(result, modpack) => {
                     done = true;
                     m.busy = None;
+                    m.current = None;
+                    m.next_install();
                     if let Ok(said) = &result {
                         crate::glass_toast::say(said.clone());
                     }
@@ -384,6 +444,7 @@ impl Launcher {
                     if modpack {
                         // The Modpacks page reads its list again.
                         self.packs_loaded = None;
+                        self.reload_instances();
                     }
                 }
                 Event::Updates(found) => m.updates = found,
@@ -448,6 +509,16 @@ impl Launcher {
         changed
     }
 
+    pub(super) fn open_essential_catalog(&mut self) {
+        self.mods_load();
+        self.mods.kind = PackKind::Mod;
+        self.mods.source = SourceId::Modrinth;
+        self.mods.browse.filters = Default::default();
+        self.mods.browse.open = None;
+        self.mods.text.set("Essential".into());
+        self.mods.asked = false;
+        self.go(Page::Mods);
+    }
     pub(super) fn mods_search(&mut self, offset: usize) {
         self.mods_search_keeping(offset, false);
     }
@@ -466,7 +537,10 @@ impl Launcher {
             }
             m.installed_list.reset();
         }
-        let query = match m.java_for(m.kind) {
+        let query = match m.java.as_ref().filter(|t| {
+            t.takes(m.kind)
+                || (m.strict && matches!(m.kind, PackKind::Modpack | PackKind::DataPack))
+        }) {
             Some(target) => Query {
                 offset,
                 limit: PAGE,
@@ -481,15 +555,66 @@ impl Launcher {
             },
         };
         // A Java instance's files are Modrinth's; Horizon's registry is for Horizon.
-        let source = match m.java_for(m.kind) {
-            Some(_) => SourceId::Modrinth,
-            None => m.source,
+        let source = match m.java.as_ref().filter(|t| {
+            t.takes(m.kind)
+                || (m.strict && matches!(m.kind, PackKind::Modpack | PackKind::DataPack))
+        }) {
+            Some(_) if m.source != SourceId::CurseForge => SourceId::Modrinth,
+            _ => m.source,
         };
         let (tx, search) = (m.tx.clone(), m.search);
+        let strict = m.strict;
+        let java = m.java.clone();
+        let generation = m.search_generation.clone();
+        generation.store(search, Ordering::Relaxed);
         std::thread::spawn(move || {
+            let mut next = offset;
+            let mut more = false;
             let result = browser::source(source)
                 .ok_or_else(|| format!("{} isn't set up.", source.label()))
-                .and_then(|s| s.search(&query));
+                .and_then(|s| {
+                    if strict
+                        && java
+                            .as_ref()
+                            .is_some_and(|t| query.kind == PackKind::Mod && t.loader.is_none())
+                    {
+                        return Ok(Vec::new());
+                    }
+                    let rows = s.search(&query)?;
+                    next += rows.len();
+                    more = rows.len() == PAGE;
+                    if !strict {
+                        return Ok(rows);
+                    }
+                    let mut kept = Vec::new();
+                    for p in rows {
+                        if generation.load(Ordering::Relaxed) != search {
+                            break;
+                        }
+                        let fits = match &java {
+                            Some(t)
+                                if t.takes(p.kind)
+                                    || matches!(p.kind, PackKind::Modpack | PackKind::DataPack) =>
+                            {
+                                let versions = s.versions_for(&p, t)?;
+                                t.pick(p.kind, &versions).is_some()
+                            }
+                            Some(_) => false,
+                            None if p.kind == PackKind::Mod
+                                && p.source != SourceId::Horizon
+                                && p.support().installable() =>
+                            {
+                                java::check_project(&backend::game_home(), &*s, &p, false, &|_| {})
+                                    .is_ok_and(|(_, c)| java::support_of(&c) == Support::Works)
+                            }
+                            None => p.support() == Support::Works,
+                        };
+                        if fits {
+                            kept.push(p);
+                        }
+                    }
+                    Ok(kept)
+                });
             let about: HashMap<String, Vec<String>> = match (&result, source) {
                 (Ok(found), SourceId::Horizon) => {
                     let instance = horizon_launcher::instances::selected();
@@ -503,7 +628,7 @@ impl Launcher {
                 }
                 _ => HashMap::new(),
             };
-            let _ = tx.send(Event::Found(search, offset, result));
+            let _ = tx.send(Event::Found(search, offset, next, more, result));
             if !about.is_empty() {
                 let _ = tx.send(Event::About(about));
             }
@@ -737,7 +862,7 @@ impl Launcher {
             }
             let updated = match done.is_empty() {
                 true => String::new(),
-                false => format!("Updated {}, checksums checked.", done.join(", ")),
+                false => trf("Updated {mods} and verified file integrity.", &[("mods", &done.join(", "))]),
             };
             let result = match failed.is_empty() {
                 true => Ok(updated),
@@ -752,7 +877,14 @@ impl Launcher {
     /// Installs (or updates) a project on a thread: a pack into its folder, a modpack into
     /// Modpacks. `known` is the project when the page has it; else it is asked for first.
     pub(super) fn mods_install(&mut self, source: SourceId, id: String, known: Option<Project>) {
-        if self.mods.busy.is_some() {
+        let target = self.mods.install_target(
+            source,
+            &id,
+            known.as_ref().map_or(self.mods.kind, |p| p.kind),
+        );
+        if self.mods.current.as_ref() == Some(&target)
+            || self.mods.queue.iter().any(|q| q.target == target)
+        {
             return;
         }
         // The first native mod: the trust notice, before anything is installed.
@@ -768,7 +900,7 @@ impl Launcher {
         }
         self.mods.native_notice = None;
         self.mods.message = None;
-        self.mods.busy = Some((id.clone(), format!("Asking {}…", source.label()), 0.));
+        let selected_id = self.selected_instance().map(|i| i.id.clone());
         self.mods.updates.remove(&(source, id.clone()));
         let everything = self.mods.everything || self.mods.browse.filters.other_version();
         // A modpack is ported for the selected version as soon as it is imported.
@@ -786,7 +918,17 @@ impl Launcher {
             let (_, name) = self.mods.worlds.iter().find(|(p, _)| *p == path)?;
             Some((path, name.clone()))
         });
-        std::thread::spawn(move || {
+        let run = Box::new(move || {
+            if selected_id.as_ref().is_some_and(|id| {
+                !instances::find(id)
+                    .is_ok_and(|i| i.home == home && i.java.as_ref().map(|j| j.target()) == java)
+            }) {
+                let _ = tx.send(Event::Done(
+                    Err(tr("The library changed before this download started.").into()),
+                    false,
+                ));
+                return;
+            }
             let last = std::cell::Cell::new(-1);
             let progress = |line: &str, f: f32| {
                 let pct = (f * 100.) as i32;
@@ -808,12 +950,24 @@ impl Launcher {
                             .iter()
                             .map(|e| format!("{} {}", e.title, e.number))
                             .collect();
-                        return Ok(format!(
-                            "Installed {}, checksums checked.",
-                            names.join(", ")
-                        ));
+                        return Ok(trf("Installed {mods} and verified file integrity.", &[("mods", &names.join(", "))]));
                     }
                     if p.kind == PackKind::DataPack {
+                        if let Some(target) = java.as_ref() {
+                            let (world, _) = world.ok_or(tr("Choose a world"))?;
+                            let versions = source.versions_for(&p, target)?;
+                            let file = target
+                                .pick(p.kind, &versions)
+                                .and_then(|v| v.file())
+                                .ok_or_else(|| {
+                                    trf("No compatible file for {name}.", &[("name", &p.title)])
+                                })?;
+                            let scratch = tempfile::tempdir().map_err(|e| e.to_string())?;
+                            let zip =
+                                source.fetch(file, scratch.path(), &|f| progress(&p.title, f))?;
+                            horizon_launcher::datapacks::add(&world, &zip)?;
+                            return Ok(trf("Installed {name}", &[("name", &p.title)]));
+                        }
                         let (world, name) =
                             world.ok_or("Pick the world the data pack goes into first.")?;
                         let done =
@@ -829,6 +983,31 @@ impl Launcher {
                         ));
                     }
                     modpack = p.kind == PackKind::Modpack;
+                    if let Some(target) = java
+                        .as_ref()
+                        .filter(|_| modpack && p.source != SourceId::Horizon)
+                    {
+                        let versions = source.versions_for(&p, target)?;
+                        let file = target
+                            .pick(PackKind::Modpack, &versions)
+                            .and_then(|v| v.file())
+                            .ok_or_else(|| {
+                                trf("No compatible file for {name}.", &[("name", &p.title)])
+                            })?;
+                        let archive =
+                            source.fetch(file, &modpacks::ports_dir().join("downloads"), &|f| {
+                                progress(&p.title, f)
+                            })?;
+                        let made = horizon_launcher::instances_mrpack::import_java_pack(
+                            &archive,
+                            &progress,
+                            Some(target),
+                        )?;
+                        if let Some(url) = &p.icon {
+                            instances::adopt_icon(&made.home, url);
+                        }
+                        return Ok(trf("Created {name}", &[("name", &made.name)]));
+                    }
                     if modpack && p.source == SourceId::Horizon {
                         let pack = horizon::pack::install(&p.id, &progress)?;
                         if let Some(url) = &p.icon {
@@ -902,6 +1081,8 @@ impl Launcher {
                 });
             let _ = tx.send(Event::Done(result, modpack));
         });
+        self.mods.queue.push_back(QueuedInstall { target, run });
+        self.mods.next_install();
     }
 
     pub(super) fn mods_field(&mut self, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -1080,11 +1261,18 @@ impl Launcher {
     pub(super) fn mods_page(&mut self, cx: &mut Context<Self>) -> Div {
         let t = self.theme;
         self.mods_load();
+        let strict = self.library.browsing_library();
+        if self.mods.strict != strict {
+            self.mods.strict = strict;
+            self.mods.asked = false;
+            self.mods.picked = None;
+            self.mods.browse.open = None;
+        }
         if !self.mods.asked {
             self.mods.asked = true;
             self.mods_search(0);
         }
-        if t.glass {
+        if t.glass || strict {
             return self.glass_mods_page(cx);
         }
         let header = page_header(
@@ -1294,6 +1482,12 @@ impl Launcher {
     pub(super) fn mods_busy_plate(&self) -> Vec<Div> {
         let t = self.theme;
         let mut out = Vec::new();
+        if !self.mods.queue.is_empty() {
+            out.push(text(theme::CAPTION).child(trf(
+                "Queued downloads: {count}",
+                &[("count", &self.mods.queue.len().to_string())],
+            )));
+        }
         if let Some((what, line, f)) = &self.mods.busy {
             let caption = if what == "all" {
                 tr("Updating")
@@ -1933,7 +2127,7 @@ impl Launcher {
             if m.searching {
                 more = disabled(more);
             } else {
-                let offset = m.results.len();
+                let offset = m.next_offset;
                 more = more.on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                     this.mods_search(offset);
                     cx.notify();
@@ -2042,6 +2236,10 @@ fn source_switch(
         );
     segments("mods-source", &SOURCES, current, t, on_pick).child(soon)
 }
+
+#[cfg(all(windows, test, feature = "visual-tests"))]
+#[path = "mods_visual_test.rs"]
+mod visual_test;
 
 #[cfg(test)]
 mod tests {

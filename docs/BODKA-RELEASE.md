@@ -1,32 +1,25 @@
-# دليل إصدار BODKA Beta على ويندوز
+# تشغيل BODKA Beta 02 على ويندوز
 
-**الإصدار v0.2.0-beta.1** متاح لمعالجات Intel وAMD ذات معمارية x64 على Windows 10 وWindows 11. [تنزيل المشغّل](https://github.com/aboodksa4011/Horizon-Bodka-Ultra-Beta/releases/download/v0.2.0-beta.1/HorizonBodkaUltra.exe) · [صفحة الإصدار](https://github.com/aboodksa4011/Horizon-Bodka-Ultra-Beta/releases/tag/v0.2.0-beta.1)
+الإصدار `v0.2.0-beta.2` مخصّص لويندوز 10 و11 على أجهزة Intel وAMD بمعمارية x64. [تحميل الحزمة الكاملة (50.5 MiB)](https://github.com/aboodksa4011/Horizon-Bodka-Ultra-Beta/releases/download/v0.2.0-beta.2/Horizon-Bodka-Ultra-Beta-Frosted-Windows-x64.zip) · [صفحة الإصدار](https://github.com/aboodksa4011/Horizon-Bodka-Ultra-Beta/releases/tag/v0.2.0-beta.2)
 
-## التشغيل والتحديث
+## التثبيت أو تحديث Beta 01
 
-1. نزّل ملف **HorizonBodkaUltra.exe** البالغ حجمه 112,724,480 بايت واحفظه في مجلد تختاره.
-2. عند تحديث نسخة سابقة، أغلق نافذة BODKA ثم افتح الملف الجديد. يستخدم المشغّل مجلدات بياناته المحفوظة على الجهاز.
-3. افتح **مشغّل BODKA المزدوج**. للفحص اليدوي اختر مجلد اللعبة مثل `%APPDATA%\.minecraft`، أو مجلد TLauncher الذي يحتوي على `versions`.
-4. اختر بطاقة الإصدار. يستورد **استيراد النسخة** الإعداد اللازم لإنشاء نسخة مُدارة والمودات المعروضة في البطاقة. يحفظ المشغّل ملفات المصدر وعوالمه في مكانها. يمكنك استخدام **إصلاح ملفات اللعبة** في بطاقة الإصدار.
+1. نزّل حزمة ZIP. من مستكشف الملفات، اضغط بزر الفأرة الأيمن واختر **استخراج الكل** إلى مجلد تختاره.
+2. إذا كنت تستخدم نسخة سابقة، أغلق نافذتها ثم افتح `HorizonBodkaUltra.exe` من المجلد الجديد. يخزّن BODKA المكتبات والإعدادات في مجلد بياناته، ويمكن استخدام المجلد المعتاد بعد التحديث.
+3. اترك مجلد `Horizon` بجوار التطبيق لاستخدام مساعد ربط Microsoft المرفق. يمكن أيضًا تنزيل ملف EXE منفردًا. عند طلب الربط، يجلب المشغّل المساعد الرسمي ويتحقق من بصمته. [ملف EXE المنفرد](https://github.com/aboodksa4011/Horizon-Bodka-Ultra-Beta/releases/download/v0.2.0-beta.2/HorizonBodkaUltra.exe)
+
+## اختيار طريقة اللعب
+
+- **مكتبة جديدة** — اختر **إنشاء مكتبة** ثم الإصدار والمحمّل. بعد اكتمال التجهيز، افتح **تعديل** لإدارة المودات والعوالم.
+- **تثبيت موجود على الجهاز** — افتح **مشغّل BODKA المزدوج**. اختر إصدارك المكتشف أو حدّد مجلد اللعبة الذي يحتوي على `versions`. اختر **استيراد النسخة** لإنشاء نسخة مُدارة.
+- **اللعب كضيف** — يفتح **لعب ماينكرافت كلاسيك كضيف** نسخة Minecraft Classic الرسمية داخل نافذة تستخدم WebView2 وتتطلب اتصالًا بالإنترنت. يحتاج تشغيل Minecraft Java الحديثة إلى حساب يملك اللعبة. اختر **ربط Microsoft عبر هورايزن** واتبع الخطوات في صفحة Microsoft.
 
 ## التحقق من ملف التنزيل
 
-من مجلد التنزيل شغّل هذا الأمر في PowerShell، ثم قارن القيمة بالملف المرفق بالإصدار. [تحميل SHA256SUMS.txt](https://github.com/aboodksa4011/Horizon-Bodka-Ultra-Beta/releases/download/v0.2.0-beta.1/SHA256SUMS.txt)
+شغّل الأمر التالي في PowerShell من مجلد التنزيل، وقارن قيمة `Hash` ببصمة الملف المنشورة مع الإصدار. بناء Beta غير موقّع بشهادة ناشر Windows. [ملف البصمات SHA256SUMS.txt](https://github.com/aboodksa4011/Horizon-Bodka-Ultra-Beta/releases/download/v0.2.0-beta.2/SHA256SUMS.txt)
 
 ```powershell
-Get-FileHash -Algorithm SHA256 .\HorizonBodkaUltra.exe
+Get-FileHash -Algorithm SHA256 .\Horizon-Bodka-Ultra-Beta-Frosted-Windows-x64.zip
 ```
 
-بصمة هذه النسخة هي `4633b371c28644291ede7fcfc81cf988c4010bb01785de1ed72a780fc81f4916`. هذا بناء Beta غير موقّع بتوقيع Windows Authenticode.
-
-## إذا لم يظهر إصدارك
-
-- تأكد من اختيار مجلد **اللعبة** الذي يحتوي على مجلد `versions`. يكمل الفحص في الخلفية أثناء تصفح النتائج.
-- اختر **كل المصادر المحلية** لإظهار المجلدات التي تعذّر نسبتها إلى مشغّل محدد. تقبل بعض الحزم الاستيراد عندما يمكن مطابقة إصدارها ومحمّل موداتها مع المصادر المدعومة.
-- افتح **التشخيص** في القائمة الجانبية أو راجع [تقرير الاختبارات](../BODKA-11-IMPLEMENTATION-REPORT.md) لمعرفة ما اختُبر في هذا الإصدار.
-
-## تسجيل الدخول
-
-يمكن للضيف إدارة مكتبته المحلية. عند طلب تشغيل Minecraft الرسمية يتحقق المشغّل من الملكية. يحتاج هذا البناء إلى معرّف عميل Microsoft مسجّل يدعم مسار المصادقة المستخدم في Horizon. يمكن لصاحب التسجيل توفير معرّفه في متغير البيئة `HORIZON_MSA_CLIENT_ID` قبل فتح التطبيق. لا تتضمن حزمة Beta ملفات اللعبة التجارية.
-
-[العودة إلى صفحة BODKA](../README.md)
+[صور التحديث](../README.md) · [تقرير الاختبارات](../BODKA-11-IMPLEMENTATION-REPORT.md)

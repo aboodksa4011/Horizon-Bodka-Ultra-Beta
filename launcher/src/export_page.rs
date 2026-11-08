@@ -65,7 +65,16 @@ impl Launcher {
                 Format::Zip => Vec::new(),
             };
             let out = export::free_path(&backend::data_dir().join("exports"), &i.name, format);
-            export::export(&i.home, &i.name, format, &worlds, &linked, &out).map(|done| {
+            export::export_game(
+                &i.home,
+                &i.name,
+                format,
+                &worlds,
+                &linked,
+                &out,
+                i.java.as_ref(),
+            )
+            .map(|done| {
                 let linked = match done.linked {
                     0 => String::new(),
                     n => trf(

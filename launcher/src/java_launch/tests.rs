@@ -84,6 +84,15 @@ fn a_modern_version_gets_its_rules_placeholders_and_classpath() {
         window: None,
         server: None,
     };
+    let mut modern_world = modern();
+    modern_world["arguments"]["game"].as_array_mut().unwrap().push(json!({"rules":[{"action":"allow","features":{"is_quick_play_singleplayer":true}}],"value":["--quickPlaySingleplayer","${quickPlaySingleplayer}"]}));
+    fs::create_dir_all(game.join("saves").join("اختبار")).unwrap();
+    fs::write(game.join("saves").join("اختبار").join("level.dat"), []).unwrap();
+    let quick = args(&command_with_world(&modern_world, &launch("osx"), Some("اختبار")).unwrap());
+    assert!(quick
+        .windows(2)
+        .any(|a| a == ["--quickPlaySingleplayer", "اختبار"]));
+    assert!(command_with_world(&modern_world, &launch("osx"), Some("../outside")).is_err());
     let cmd = command(&modern(), &launch("osx")).unwrap();
     let a = args(&cmd);
     let at = |s: &str| {

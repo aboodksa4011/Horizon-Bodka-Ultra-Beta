@@ -122,6 +122,26 @@ fn lists_what_each_world_is() {
 }
 
 #[test]
+fn importing_a_world_backup_creates_an_independent_save() {
+    let tmp = tempfile::tempdir().unwrap();
+    let source = world(tmp.path(), "World", vec![("LevelName", name("العالم"))]);
+    let archive = backup(tmp.path(), &find(tmp.path(), "World").unwrap()).unwrap();
+    assert_eq!(
+        crate::import::what(&archive).unwrap(),
+        crate::import::Dropped::World
+    );
+    let restored = import_archive(tmp.path(), &archive).unwrap();
+    assert_ne!(source, restored.path);
+    assert_eq!(restored.name, "العالم");
+    assert_eq!(
+        fs::read(source.join("region/r.0.0.mca")).unwrap(),
+        fs::read(restored.path.join("region/r.0.0.mca")).unwrap()
+    );
+    assert!(source.join(LOCK).exists());
+    assert!(!restored.path.join(LOCK).exists());
+}
+
+#[test]
 fn a_backup_is_named_and_laid_out_as_vanillas() {
     let home = scratch("backup");
     world(&home, "World", vec![("LevelName", name("World"))]);

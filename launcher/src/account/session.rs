@@ -36,7 +36,7 @@ impl Phase {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum State {
     Ready,
@@ -47,7 +47,7 @@ pub enum State {
 }
 
 /// Safe to show or serialize: contains no credential or secret-store contents.
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Status {
     pub state: State,
     pub expires_at: Option<u64>,
@@ -267,6 +267,11 @@ pub(super) fn refresh_account(
     accounts: &Path,
     progress: &dyn Fn(Phase),
 ) -> Status {
+    #[cfg(all(windows, target_arch = "x86_64"))]
+    if horizon_link::applicable(ep, client_id, store) {
+        progress(Phase::Microsoft);
+        return horizon_link::refresh(&account.uuid).unwrap_or_else(|e| Status::failed(&e));
+    }
     let result = (|| {
         progress(Phase::Queued);
         let _operation = lock(store)?;

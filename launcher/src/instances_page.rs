@@ -53,6 +53,8 @@ pub(super) struct InstanceDialog {
     pub(super) picture: Option<Option<instance_icons::Chosen>>,
     pub(super) error: Option<String>,
     pub(super) busy: bool,
+    pub(super) advanced: bool,
+    pub(super) memory_mb: Option<u32>,
     /// Horizon, or the Java game it plays.
     pub(super) java: new_instance::JavaChoice,
     /// The Horizon version it keeps (`Instance::version`); None follows the launcher's.
@@ -65,6 +67,7 @@ pub(super) struct InstanceDialog {
 #[derive(Default)]
 pub(super) struct Instances {
     pub(super) list: Vec<Instance>,
+    pub(super) default_has_worlds: bool,
     pub(super) dialog: Option<InstanceDialog>,
     /// The instance whose Delete is waiting for its confirmation, and why the last one failed.
     confirm_delete: Option<String>,
@@ -84,6 +87,18 @@ impl Instances {
 impl Launcher {
     pub(super) fn reload_instances(&mut self) {
         self.instances.list = instances::list();
+        self.instances.default_has_worlds = self
+            .instances
+            .list
+            .iter()
+            .find(|i| i.kind == InstanceKind::Default)
+            .is_some_and(|i| {
+                std::fs::read_dir(i.home.join("saves"))
+                    .into_iter()
+                    .flatten()
+                    .flatten()
+                    .any(|entry| entry.path().join("level.dat").is_file())
+            });
         // A picture may have come or gone with the change.
         self.instances
             .icons
@@ -304,6 +319,8 @@ impl Launcher {
             copy: false,
             error: None,
             busy: false,
+            advanced: false,
+            memory_mb: None,
             java,
         });
         self.servers.text(Field::InstanceVersion).set(String::new());
@@ -369,6 +386,7 @@ impl Launcher {
             .map(|p| p.as_ref().map(|c| c.png.clone()));
         let editing = d.editing.clone();
         let edited = editing.is_some();
+        let memory_mb = d.memory_mb;
         let copy = selected.filter(|_| d.copy);
         // The Horizon version is Horizon's instances' alone: a Java one plays its own game.
         let plays_horizon = d.java.kind == new_instance::NewKind::Horizon;
@@ -414,6 +432,11 @@ impl Launcher {
                 (None, None) => instances::create(&name, copy.as_deref())?.id,
             };
             let instance = instances::edit(&id, |m| {
+                if !edited {
+                    if let Some(j) = m.java.as_mut() {
+                        j.memory_mb = memory_mb;
+                    }
+                }
                 m.name = Some(name);
                 m.group = group;
                 m.icon = icon;
@@ -448,7 +471,11 @@ impl Launcher {
                         if let Some(release) = download {
                             this.install_for_instance(release);
                         }
-                        if matches!(instance.kind, InstanceKind::Default | InstanceKind::Own) {
+                        if !edited && this.page == Page::Dashboard {
+                            this.prepare_new_library(&instance, cx);
+                        } else if this.page != Page::Library
+                            && matches!(instance.kind, InstanceKind::Default | InstanceKind::Own)
+                        {
                             this.go(Page::Play);
                         }
                     }
@@ -467,7 +494,14 @@ impl Launcher {
 
     pub(super) fn instance_dialog(&mut self, cx: &mut Context<Self>) -> Option<Stateful<Div>> {
         let t = self.theme;
-        if t.glass {
+        if t.glass
+            || (self.page == Page::Dashboard
+                && self
+                    .instances
+                    .dialog
+                    .as_ref()
+                    .is_some_and(|d| d.editing.is_none()))
+        {
             return self.glass_instance_dialog(cx);
         }
         let d = self.instances.dialog.as_ref()?;

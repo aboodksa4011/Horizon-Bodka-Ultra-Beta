@@ -360,6 +360,32 @@ fn fill(arg: &str, vars: &HashMap<&str, String>) -> String {
 /// The command that starts `version` (its JSON) as `launch` says, run in the game folder.
 /// Unpacks natives and lays out old assets first.
 pub fn command(version: &Value, launch: &Launch) -> Result<Command, String> {
+    command_with_world(version, launch, None)
+}
+
+pub fn command_with_world(
+    version: &Value,
+    launch: &Launch,
+    world: Option<&str>,
+) -> Result<Command, String> {
+    if let Some(folder) = world {
+        if crate::browser::safe_name(folder).is_none()
+            || !launch
+                .game_dir
+                .join("saves")
+                .join(folder)
+                .join("level.dat")
+                .is_file()
+        {
+            return Err(crate::i18n::tr("The selected world is unavailable.").into());
+        }
+        if !mentions(&version["arguments"]["game"], "is_quick_play_singleplayer") {
+            return Err(crate::i18n::tr(
+                "Open this world from Singleplayer in this Minecraft version.",
+            )
+            .into());
+        }
+    }
     let id = version["id"].as_str().ok_or("The version file has no id")?;
     let main = version["mainClass"]
         .as_str()
@@ -421,6 +447,10 @@ pub fn command(version: &Value, launch: &Launch) -> Result<Command, String> {
             launch.window.map(|w| w.1.to_string()).unwrap_or_default(),
         ),
         (
+            "quickPlaySingleplayer",
+            world.unwrap_or_default().to_string(),
+        ),
+        (
             "quickPlayMultiplayer",
             launch.server.unwrap_or_default().to_string(),
         ),
@@ -456,7 +486,10 @@ pub fn command(version: &Value, launch: &Launch) -> Result<Command, String> {
         );
         game.extend(line.split_whitespace().map(String::from));
     }
-    let on = launch.features();
+    let mut on = launch.features();
+    if world.is_some() {
+        on.push("is_quick_play_singleplayer");
+    }
     jvm_list.extend(list(&arguments["jvm"], launch.os, &on));
     game.extend(list(&arguments["game"], launch.os, &on));
     // Versions whose rules don't ask for them still take the arguments (since 1.6.1): the

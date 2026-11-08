@@ -227,8 +227,9 @@ fn modrinth_answers() {
     assert_eq!(sodium.kind, Kind::Mod);
     assert_eq!(sodium.page, "https://modrinth.com/mod/sodium");
     assert!(matches!(sodium.support(), Support::Partial(_)));
-    // Data packs, plugins and shader packs are not.
-    for project_type in ["plugin", "shader"] {
+    // A Java library can install shaders. Server plugins stay outside this browser.
+    assert_eq!(modrinth::parse_hit(&json!({"project_id":"s","project_type":"shader","slug":"s"})).unwrap().kind,Kind::Shader);
+    for project_type in ["plugin", "datapack"] {
         let hit = json!({"project_id": "x", "project_type": project_type, "slug": "p"});
         assert!(modrinth::parse_hit(&hit).is_none(), "{project_type}");
     }
@@ -444,8 +445,6 @@ fn live_modrinth_search_pick_and_download() {
 }
 
 #[test]
-fn curseforge_is_coming_soon_and_never_searched() {
-    let ids: Vec<SourceId> = sources().iter().map(|s| s.id()).collect();
-    assert_eq!(ids, [SourceId::Modrinth, SourceId::Horizon]);
-    assert!(source(SourceId::CurseForge).is_none());
+fn curseforge_registration_follows_the_configured_key() {
+    assert_eq!(source(SourceId::CurseForge).is_some(),curseforge::CurseForge::from_env().is_some());
 }

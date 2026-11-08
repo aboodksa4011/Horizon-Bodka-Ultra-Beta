@@ -2128,7 +2128,25 @@ pub fn java_game(
     server: Option<&str>,
     log: &dyn Fn(String),
 ) -> Result<Command, String> {
-    prepare_java_game(instance, server, false, log)
+    prepare_java_game(instance, server, None, false, log)
+}
+
+/// Resolve and download a Java library through the same account and file checks used by Play.
+pub fn install_java_library(instance: &crate::instances::Instance, log: &dyn Fn(String)) -> Result<(), String> {
+    prepare_java_game(instance, None, None, false, log).map(drop)
+}
+
+/// Check the completion markers and profiles written by preparation without contacting the network.
+pub fn java_library_installed(game: &crate::instances::JavaGame) -> bool {
+    let root = data_dir().join("minecraft").join("versions");
+    let profile = |id: &str| {
+        mojang::relative(id).ok().is_some_and(|part| {
+            let dir = root.join(part);
+            dir.join(".downloaded").is_file() && dir.join(format!("{id}.json")).is_file()
+        })
+    };
+    profile(&game.minecraft) && root.join(&game.minecraft).join(format!("{}.jar", game.minecraft)).is_file()
+        && game.loader.as_ref().is_none_or(|l| profile(&l.kind.profile_id(&l.version, &game.minecraft)))
 }
 
 /// Recheck the managed copy, including files for its loader. Never spawn the game.
@@ -2136,13 +2154,18 @@ pub fn repair_java(
     instance: &crate::instances::Instance,
     log: &dyn Fn(String),
 ) -> Result<(), String> {
-    prepare_java_game(instance, None, true, log)?;
+    prepare_java_game(instance, None, None, true, log)?;
     crate::dual::repair_mods(&instance.home)
+}
+
+pub fn java_world(instance:&crate::instances::Instance,folder:&str,log:&dyn Fn(String))->Result<Command,String>{
+    prepare_java_game(instance,None,Some(folder),false,log)
 }
 
 fn prepare_java_game(
     instance: &crate::instances::Instance,
     server: Option<&str>,
+    world: Option<&str>,
     repair: bool,
     log: &dyn Fn(String),
 ) -> Result<Command, String> {
@@ -2233,7 +2256,7 @@ fn prepare_java_game(
         crate::java_launch::resolve(crate::java_launch::read(&file(&start)?)?, &minecraft)?;
     let jvm_args: Vec<String> = game.jvm_args.split_whitespace().map(String::from).collect();
     fs::create_dir_all(&instance.home).map_err(|e| format!("{}: {e}", instance.home.display()))?;
-    crate::java_launch::command(
+    crate::java_launch::command_with_world(
         &version,
         &crate::java_launch::Launch {
             minecraft: &minecraft,
@@ -2249,6 +2272,7 @@ fn prepare_java_game(
             window: game.window,
             server,
         },
+        world,
     )
 }
 
@@ -4178,6 +4202,8 @@ pub enum Msg {
     DualBindings(u64, Vec<(crate::dual::Origin, String)>),
     DualImported(crate::dual::Origin, Result<String,String>),
     DualRepairLine(String),
+    LibraryProgress(String, String),
+    LibraryPrepared(String, Result<(), String>),
     DualRepaired(Result<(),String>),
     Transfer(Box<crate::downloads::Transfer>),
     Releases(Result<Vec<Release>, String>),

@@ -29,9 +29,25 @@ impl Launcher {
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default();
+            if file
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("jar"))
+            {
+                self.add_library_jar(file, cx);
+                continue;
+            }
+            if file
+                .extension()
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("mrpack"))
+                && matches!(self.page, Page::Dashboard | Page::Library)
+            {
+                self.import_java_pack(file, cx);
+                continue;
+            }
             match import::what(&file) {
                 Err(e) => self.importing.note = Some(Err(e)),
                 Ok(Dropped::Instance) => self.import_instance(file, cx),
+                Ok(Dropped::World) => self.import_library_world(file, cx),
                 // The same import the Versions page's Import button starts. It
                 // reports through `Msg::Imported`, which the Versions page
                 // already shows, so the note here only says it began -- and
@@ -46,6 +62,9 @@ impl Launcher {
                     }
                     self.start_build_import(file, cx);
                     self.importing.note = Some(Ok(tr("Importing…").to_owned()));
+                }
+                Ok(Dropped::Modpack) if matches!(self.page, Page::Dashboard | Page::Library) => {
+                    self.import_java_pack(file, cx)
                 }
                 Ok(Dropped::Modpack) => {
                     self.show_modpack(None);
@@ -79,6 +98,81 @@ impl Launcher {
         }
     }
 
+    fn import_library_world(&mut self, file: PathBuf, cx: &mut Context<Self>) {
+        let Some(i) = self.selected_instance().cloned() else {
+            return;
+        };
+        self.importing.busy += 1;
+        let task = cx
+            .background_executor()
+            .spawn(async move { horizon_launcher::worlds::import_archive(&i.home, &file) });
+        cx.spawn(async move |this, cx| {
+            let result = task.await;
+            let _ = this.update(cx, |this, cx| {
+                this.importing.busy -= 1;
+                this.importing.note = Some(result.map(|world| {
+                    this.worlds.stale();
+                    this.reload_instances();
+                    if this.selected_instance().is_some_and(|s| s.id == i.id) {
+                        this.home_tab = home_tabs::HomeTab::Worlds;
+                        this.go(Page::Library);
+                    }
+                    trf("World imported: {name}", &[("name", &world.name)])
+                }));
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+    fn add_library_jar(&mut self, file: PathBuf, cx: &mut Context<Self>) {
+        let Some((home, target)) = self
+            .selected_instance()
+            .and_then(|i| Some((i.home.clone(), i.java.as_ref()?.target())))
+            .filter(|(_, t)| t.loader.is_some())
+        else {
+            self.importing.note = Some(Err(
+                tr("Drop a mod into a Java library with a loader.").into()
+            ));
+            return;
+        };
+        self.importing.busy += 1;
+        let task = cx.background_executor().spawn(async move {
+            horizon_launcher::browser::local_jar::install(&file, &target, &home)
+        });
+        cx.spawn(async move |this, cx| {
+            let done = task.await;
+            let _ = this.update(cx, |this, cx| {
+                this.importing.busy -= 1;
+                this.importing.note = Some(done.map(|rows| rows.join(", ")));
+                this.mods.refresh_manifest();
+                this.instance_mods_changed();
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    fn import_java_pack(&mut self, file: PathBuf, cx: &mut Context<Self>) {
+        self.importing.busy += 1;
+        let task = cx.background_executor().spawn(async move {
+            horizon_launcher::instances_mrpack::import_java_pack(&file, &|_, _| {}, None)
+        });
+        cx.spawn(async move |this, cx| {
+            let done = task.await;
+            let _ = this.update(cx, |this, cx| {
+                this.importing.busy -= 1;
+                this.importing.note = Some(done.map(|i| {
+                    this.reload_instances();
+                    this.select_instance(&i);
+                    this.go(Page::Dashboard);
+                    this.prepare_new_library(&i, cx);
+                    trf("Created {name}", &[("name", &i.name)])
+                }));
+                cx.notify();
+            });
+        })
+        .detach();
+    }
     fn import_instance(&mut self, file: PathBuf, cx: &mut Context<Self>) {
         self.importing.busy += 1;
         self.importing.note = None;

@@ -60,6 +60,7 @@ impl Launcher {
             || matches!(self.self_update, SelfUpdate::Downloading(..))
             || self.servers.location_busy()
             || self.importing.location_busy()
+            || self.library.busy()
             || self.github.busy()
             || self.worlds.location_busy()
             || self.instances.location_busy()

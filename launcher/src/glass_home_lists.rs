@@ -90,8 +90,13 @@ impl Launcher {
         let menu_open = self.list_menu.as_ref().is_some_and(|(k, _)| *k == key);
         let busy = self.worlds.busy.is_some();
         let this_busy = self.worlds.busy.as_ref() == Some(&w.folder);
-        let can_play = self.can_start_selected() && !busy;
+        let can_play = self.can_join_selected() && !busy;
         let mut facts = vec![tr(w.mode).to_string()];
+        let library_version = self
+            .selected_instance()
+            .and_then(|i| i.java.as_ref())
+            .map_or(horizon_launcher::browser::GAME, |j| j.minecraft.as_str());
+        let mismatch = w.version.as_deref().is_some_and(|v| v != library_version);
         facts.extend(w.version.clone());
         facts.push(glass_home::last_played(w.last_played));
         let hover = self.list_hover_listener(key.clone(), cx);
@@ -170,6 +175,9 @@ impl Launcher {
         }
         div().child(
             row.child(ui::list_text(w.name.clone(), facts.join(" · ")))
+                .when(mismatch, |r| {
+                    r.child(crate::blocks::badge(tr("Different game version"), t.warn, &t))
+                })
                 .child(size.relative())
                 .when(hovered || menu_open, |r| r.child(more)),
         )

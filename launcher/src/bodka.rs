@@ -27,7 +27,7 @@ fn row() -> Div {
 impl Launcher {
     pub(super) fn bodka_navigation(&self, cx: &mut Context<Self>) -> Div {
         let pages = [
-            (Page::Dashboard, "Home", "home"),
+            (Page::Dashboard, "My libraries", "archive"),
             (Page::Play, "Play game", "play"),
             (Page::Versions, "Versions", "archive"),
             (Page::Dual, "BODKA Dual Launcher", "package"),
@@ -37,8 +37,11 @@ impl Launcher {
             (Page::Performance, "Performance", "computer"),
             (Page::Settings, "Settings", "sliders-horizontal"),
             (Page::Diagnostics, "Diagnostics", "search-01"),
+            (Page::Servers, "Servers", "server"),
+            (Page::Notes, "Patch notes", "notes"),
             (Page::About, "About", "information-circle"),
         ];
+        let pages:Vec<_>=pages.into_iter().filter(|(p,_,_)|self.library.sidebar_tools || matches!(p,Page::Dashboard|Page::Downloads|Page::Settings) || *p==self.page).collect();
         let current = pages.iter().position(|(page, ..)| *page == self.page);
         let previous = pages
             .iter()
@@ -105,12 +108,11 @@ impl Launcher {
                 })),
             );
         }
-        nav
+        nav.child(ui::quiet_icon("library-more-tools",Some("sliders-horizontal"),tr(if self.library.sidebar_tools {"Fewer sections"}else{"Launcher tools"}),34.,&self.theme).on_click(cx.listener(|this,_:&ClickEvent,_,cx|{this.library.sidebar_tools = !this.library.sidebar_tools;cx.notify();})))
     }
 
     pub(super) fn bodka_sidebar(&mut self, cx: &mut Context<Self>) -> Div {
         let t = self.theme;
-        let instances = self.glass_instances(cx);
         crate::glass::plate(8.)
             .flex()
             .flex_col()
@@ -146,24 +148,7 @@ impl Launcher {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .child(self.bodka_navigation(cx))
-                    .child(
-                        text(tr("Instances"), 12.)
-                            .text_color(t.muted)
-                            .px(px(20.))
-                            .pt(px(20.))
-                            .pb(px(8.)),
-                    )
-                    .child(div().px(px(10.)).children(instances))
-                    .child(
-                        ui::quiet("bodka-new-instance", tr("New instance"), 32., &t)
-                            .mx(px(12.))
-                            .my(px(8.))
-                            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                                this.open_instance_dialog(None);
-                                cx.notify();
-                            })),
-                    ),
+                    .child(self.bodka_navigation(cx)),
             )
             .child(
                 div()
@@ -173,6 +158,7 @@ impl Launcher {
                     .p(px(16.))
                     .border_t_1()
                     .border_color(t.accent.opacity(0.15))
+                    .when(self.owner != Some(true), |d| d.child(crate::classic_game::button("sidebar-classic", &t, cx)))
                     .child(
                         text(
                             if self.owner == Some(true) {
@@ -198,146 +184,6 @@ impl Launcher {
                         )),
                     ),
             )
-    }
-
-    pub(super) fn bodka_dashboard(&mut self, cx: &mut Context<Self>) -> Div {
-        let t = self.theme;
-        let chosen = self
-            .selected()
-            .cloned()
-            .unwrap_or_else(|| tr("No version installed").into());
-        let ready = self.selected().is_some_and(|tag| backend::is_prepared(tag));
-        let mut page = div()
-            .flex()
-            .flex_col()
-            .gap(px(18.))
-            .pt(px(32.))
-            .child(
-                card()
-                    .border_1()
-                    .border_color(t.accent.opacity(0.3))
-                    .gap(px(18.))
-                    .child(
-                        text(horizon_launcher::branding::APP_NAME, 30.)
-                            .text_color(t.ink)
-                            .text_center(),
-                    )
-                    .child(
-                        text(
-                            tr("Explore freely. Sign in when your game requires it."),
-                            15.,
-                        )
-                        .text_center()
-                        .text_color(t.muted),
-                    )
-                    .child(
-                        row()
-                            .justify_center()
-                            .child(
-                                button("bodka-play-page", "Play game", Kind::Primary, &t).on_click(
-                                    cx.listener(|this, _: &ClickEvent, _, cx| {
-                                        this.go(Page::Play);
-                                        cx.notify();
-                                    }),
-                                ),
-                            )
-                            .child(
-                                button(
-                                    "bodka-versions-page",
-                                    "Browse versions",
-                                    Kind::Secondary,
-                                    &t,
-                                )
-                                .on_click(cx.listener(
-                                    |this, _: &ClickEvent, _, cx| {
-                                        this.go(Page::Versions);
-                                        cx.notify();
-                                    },
-                                )),
-                            )
-                            .child(
-                                button(
-                                    "bodka-customize",
-                                    "Customize launcher",
-                                    Kind::Secondary,
-                                    &t,
-                                )
-                                .on_click(cx.listener(
-                                    |this, _: &ClickEvent, _, cx| {
-                                        this.go(Page::Settings);
-                                        cx.notify();
-                                    },
-                                )),
-                            ),
-                    ),
-            )
-            .child(
-                row()
-                    .child(
-                        card()
-                            .flex_1()
-                            .min_w(px(180.))
-                            .child(text(tr("Installed versions"), 13.).text_color(t.muted))
-                            .child(
-                                text(self.installed.len().to_string(), 32.).text_color(t.accent),
-                            ),
-                    )
-                    .child(
-                        card()
-                            .flex_1()
-                            .min_w(px(180.))
-                            .child(text(tr("Selected version"), 13.).text_color(t.muted))
-                            .child(text(chosen, 16.)),
-                    )
-                    .child(
-                        card()
-                            .flex_1()
-                            .min_w(px(180.))
-                            .child(text(tr("Game status"), 13.).text_color(t.muted))
-                            .child(text(self.bodka_launch_state(ready), 18.).text_color(t.accent)),
-                    ),
-            )
-            .child(
-                row()
-                    .child(
-                        button("bodka-servers", "Servers", Kind::Secondary, &t).on_click(
-                            cx.listener(|this, _: &ClickEvent, _, cx| {
-                                this.go(Page::Servers);
-                                cx.notify();
-                            }),
-                        ),
-                    )
-                    .child(
-                        button("bodka-notes", "Patch notes", Kind::Secondary, &t).on_click(
-                            cx.listener(|this, _: &ClickEvent, _, cx| {
-                                this.go(Page::Notes);
-                                cx.notify();
-                            }),
-                        ),
-                    ),
-            );
-        if let Load::Failed(error) = &self.releases {
-            page = page.child(notice(error.clone(), &t));
-        }
-        page
-    }
-
-    pub(super) fn bodka_launch_state(&self, ready: bool) -> &'static str {
-        if self.client.is_some() {
-            tr("Running")
-        } else if self.starting_client.is_some() {
-            tr("Launching game")
-        } else if self.preparing {
-            tr("Preparing game files")
-        } else if self.installing.is_some() {
-            tr("Downloading game files")
-        } else if self.client_error.is_some() {
-            tr("Failed")
-        } else if ready {
-            tr("Ready")
-        } else {
-            tr("Needs preparing")
-        }
     }
 
     pub(super) fn bodka_worlds(&mut self, cx: &mut Context<Self>) -> Div {
@@ -596,7 +442,7 @@ impl Launcher {
 
     pub(super) fn bodka_diagnostics(&self, cx: &mut Context<Self>) -> Div {
         let t = self.theme;
-        let configured = account::client_id().is_some();
+        let configured = account::sign_in_available();
         let prepared = self.selected().is_some_and(|tag| backend::is_prepared(tag));
         div()
             .flex()
@@ -860,7 +706,7 @@ impl Launcher {
                 linear_color_stop(rgb(p.accent).opacity(0.08 * strength), 0.),
                 linear_color_stop(rgb(p.background).opacity(0.), 1.),
             ));
-        bg = if animated {
+        bg = if animated && self.home_background().is_none() && !settings.sunset_background {
             bg.child(light.with_animation(
                 "bodka-background-breath",
                 Animation::new(Duration::from_secs(14)).repeat(),
@@ -880,41 +726,38 @@ impl Launcher {
                     .bg(rgb(p.accent).opacity(0.035)),
             );
         }
-        if self.home_background().is_none() && self.settings.bodka.sunset_background {
-            let look = picture_cache::Look::BodkaFilm(
-                self.settings.bodka.background_blur.min(48),
-                animated,
-            );
-            if let Some(image) = self.picture(std::path::Path::new("bodka:cherry-sunset"), look, cx)
-            {
-                bg = bg.child(
-                    gpui::img(image)
-                        .id("bodka-sunset")
-                        .absolute()
-                        .size_full()
-                        .object_fit(ObjectFit::Cover),
-                );
-            }
-        }
-        if let Some(path) = self.home_background() {
-            let blur = self.settings.bodka.background_blur.min(48);
-            let side = if blur > 0 {
-                self.window_side().min(1280)
-            } else {
-                self.window_side()
-            };
-            if let Some(image) =
-                self.picture(&path, picture_cache::Look::Background(side, blur), cx)
-            {
-                bg = bg.child(
-                    gpui::img(image)
-                        .absolute()
-                        .size_full()
-                        .object_fit(ObjectFit::Cover),
-                );
-            }
+        let blur = self.settings.bodka.background_blur.min(48);
+        let picture = if let Some(path) = self.home_background() {
+            let side = if blur > 0 { self.window_side().min(1280) } else { self.window_side() };
+            Some((
+                path,
+                picture_cache::Look::Background(side, blur),
+                picture_cache::Look::FrostedPhoto(blur),
+            ))
+        } else if self.settings.bodka.sunset_background {
+            Some((
+                std::path::PathBuf::from("bodka:cherry-sunset"),
+                picture_cache::Look::BodkaFilm(blur, animated),
+                picture_cache::Look::FrostedFilm(blur, animated),
+            ))
+        } else {
+            None
+        };
+        let (sharp, frosted) = picture.map_or((None, None), |(path, base, frost)| {
+            let sharp = self.picture(&path, base, cx);
+            let blurred = if self.settings.performance() { None } else { self.picture(&path, frost, cx) };
+            (sharp, blurred)
+        });
+        let frame = self.wallpaper_frame(sharp.as_deref(), cx);
+        if let Some(image) = sharp {
+            bg = bg.child(gpui::canvas(|_, _, _| {}, move |bounds, (), window, _| {
+                let cover = ObjectFit::Cover.get_bounds(bounds, image.size(frame));
+                let _ = window.paint_image(bounds, cover, gpui::Corners::default(), image.clone(), frame, false);
+            }).absolute().size_full());
         }
         let brightness = f32::from(self.settings.bodka.brightness.min(150)) / 100.;
+        let dim = f32::from(self.settings.bodka.dim.min(100)) / 100.;
+        crate::glass::set_wallpaper(frosted, frame, brightness, dim);
         if brightness < 1. {
             bg = bg.child(
                 div()
@@ -934,7 +777,7 @@ impl Launcher {
             div()
                 .absolute()
                 .size_full()
-                .bg(rgb(0).opacity(f32::from(self.settings.bodka.dim.min(100)) / 100.)),
+                .bg(rgb(0).opacity(dim)),
         );
         bg.into_any_element()
     }

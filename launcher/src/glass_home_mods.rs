@@ -204,7 +204,17 @@ impl Launcher {
         };
         ui::list_row(key, hovered, hover, &t)
             .child(icon)
-            .child(ui::list_text(row.name.clone(), note))
+            .child(
+                div()
+                    .id(SharedString::from(format!("copy-mod-{}", row.file)))
+                    .flex_1()
+                    .min_w_0()
+                    .cursor_pointer()
+                    .child(ui::list_text(row.name.clone(), note))
+                    .on_click(cx.listener(move |_, _: &ClickEvent, _, cx| {
+                        copy_to_clipboard(cx, gpui::ClipboardItem::new_string(row.name.clone()));
+                    })),
+            )
             .children(update.map(|u| u.relative()))
             .child(
                 controls

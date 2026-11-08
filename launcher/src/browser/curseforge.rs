@@ -55,6 +55,18 @@ impl CurseForge {
         .map(|key| Self { key })
     }
 
+    pub(super) fn file(&self, project: u64, file: u64) -> Result<Version, String> {
+        let found = self.get(&format!("{API}/mods/{project}/files/{file}"))?;
+        let data = &found["data"];
+        if data["modId"].as_u64() != Some(project)
+            || data["id"].as_u64() != Some(file)
+            || data["isAvailable"].as_bool() == Some(false)
+        {
+            return Err(crate::i18n::tr("Invalid pack manifest.").into());
+        }
+        parse_file(data).ok_or_else(|| crate::i18n::tr("Invalid pack manifest.").into())
+    }
+
     fn get(&self, url: &str) -> Result<Value, String> {
         let response = super::download::agent(url)
             .get(url)
@@ -84,6 +96,15 @@ pub(super) fn search_url(query: &Query) -> String {
         url.push_str(&format!("&gameVersion={}", encode(v)));
     } else if !query.everything && matches!(query.kind, Kind::ResourcePack | Kind::Mod) {
         url.push_str(&format!("&gameVersion={GAME}"));
+    }
+    if let Some(id) = query.filters.loader.as_deref().and_then(|l| match l {
+        "forge" => Some(1),
+        "fabric" => Some(4),
+        "quilt" => Some(5),
+        "neoforge" => Some(6),
+        _ => None,
+    }) {
+        url.push_str(&format!("&modLoaderType={id}"));
     }
     if !query.text.is_empty() {
         url.push_str("&searchFilter=");
@@ -220,6 +241,49 @@ impl Source for CurseForge {
             .ok_or_else(|| format!("CurseForge: {id} is not a pack Horizon loads."))
     }
 
+    fn versions_for(
+        &self,
+        project: &Project,
+        target: &super::java_instance::Target,
+    ) -> Result<Vec<Version>, String> {
+        let mut all = Vec::new();
+        let mut index = 0;
+        loop {
+            let found = self.get(&format!(
+                "{API}/mods/{}/files?gameVersion={}&pageSize=50&index={index}",
+                encode(&project.id),
+                encode(&target.minecraft)
+            ))?;
+            let data = found["data"]
+                .as_array()
+                .ok_or("Invalid CurseForge file list")?;
+            all.extend(
+                data.iter()
+                    .filter(|f| f["isAvailable"].as_bool() != Some(false))
+                    .filter_map(parse_file),
+            );
+            index += data.len();
+            if data.len() < 50
+                || found["pagination"]["totalCount"]
+                    .as_u64()
+                    .is_some_and(|n| index as u64 >= n)
+            {
+                break;
+            }
+            if index > 10000 {
+                return Err("CurseForge file list is too large".into());
+            }
+        }
+        if project.kind == Kind::ResourcePack {
+            for f in &mut all {
+                if f.loaders.is_empty() {
+                    f.loaders.push("minecraft".into());
+                }
+            }
+        }
+        all.sort_by(|a, b| b.published.cmp(&a.published));
+        Ok(all)
+    }
     fn versions(&self, project: &Project) -> Result<Vec<Version>, String> {
         let found = self.get(&format!(
             "{API}/mods/{}/files?pageSize=50",

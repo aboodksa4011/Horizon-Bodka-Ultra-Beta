@@ -169,6 +169,84 @@ fn free_name(dir: &Path, base: &str, suffix: &str, first: u32) -> String {
         .unwrap()
 }
 
+/// Restore a single world (including vanilla backups) into an independent save directory.
+pub fn import_archive(home: &Path, file: &Path) -> Result<World, String> {
+    use crate::i18n::tr;
+    let invalid = tr("The archive must contain exactly one Minecraft world.");
+    let mut zip = crate::import::open(file)?;
+    if zip.len() > 200_000 {
+        return Err(invalid.into());
+    }
+    let names = zip
+        .file_names()
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    let mut roots = names.iter().filter_map(|n| {
+        let prefix = n.strip_suffix("level.dat")?;
+        (prefix.is_empty() || (prefix.ends_with('/') && !prefix[..prefix.len() - 1].contains('/')))
+            .then(|| prefix.to_owned())
+    });
+    let root = roots.next().ok_or(invalid)?;
+    if roots.next().is_some() {
+        return Err(invalid.into());
+    }
+    let base = if root.is_empty() {
+        file.file_stem().and_then(|n| n.to_str()).unwrap_or("World")
+    } else {
+        root.trim_end_matches('/')
+    };
+    let base = crate::browser::safe_name(base).ok_or(invalid)?.to_owned();
+    let saves = home.join("saves");
+    fs::create_dir_all(&saves).map_err(|e| e.to_string())?;
+    let temp = tempfile::tempdir_in(home).map_err(|e| e.to_string())?;
+    let mut left = crate::import::MAX_IMPORT;
+    for idx in 0..zip.len() {
+        let mut member = zip.by_index(idx).map_err(|e| e.to_string())?;
+        let full = member.name().map_err(|e| e.to_string())?.into_owned();
+        let Some(rel) = full.strip_prefix(&root) else {
+            continue;
+        };
+        if rel.is_empty() || rel.ends_with('/') || rel == LOCK {
+            continue;
+        }
+        if rel.split('/').any(|s| {
+            let stem = s.split('.').next().unwrap_or_default().to_ascii_uppercase();
+            crate::browser::safe_name(s).is_none()
+                || ["CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$"].contains(&stem.as_str())
+                || (stem.len() == 4
+                    && (stem.starts_with("COM") || stem.starts_with("LPT"))
+                    && stem.as_bytes()[3].is_ascii_digit())
+        }) || member.size() > left
+            || (rel == "level.dat" && member.size() > 64 << 20)
+        {
+            return Err(invalid.into());
+        }
+        let out = temp.path().join(rel);
+        fs::create_dir_all(out.parent().ok_or(invalid)?).map_err(|e| e.to_string())?;
+        let mut dest = fs::File::create_new(out).map_err(|e| e.to_string())?;
+        let size = std::io::copy(&mut (&mut member).take(left + 1), &mut dest)
+            .map_err(|e| e.to_string())?;
+        left = left.checked_sub(size).ok_or(invalid)?;
+    }
+    if level_dat(&temp.path().join("level.dat")).is_none() {
+        return Err(invalid.into());
+    }
+    let _guard = crate::browser::lock_home(&saves);
+    let folder = (1..)
+        .map(|n| {
+            if n == 1 {
+                base.clone()
+            } else {
+                format!("{base} ({n})")
+            }
+        })
+        .find(|s| !saves.join(s).exists())
+        .expect("finite save names");
+    let dest = saves.join(&folder);
+    fs::rename(temp.path(), &dest).map_err(|e| e.to_string())?;
+    read(&dest).ok_or_else(|| invalid.into())
+}
+
 /// Zips the world into the game folder's `backups/`, as vanilla's Make Backup does. Returns the
 /// zip's path.
 pub fn backup(home: &Path, world: &World) -> Result<PathBuf, String> {

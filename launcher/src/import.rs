@@ -31,6 +31,7 @@ pub enum Dropped {
     Instance,
     /// A Java modpack, for the Modpacks import.
     Modpack,
+    World,
     /// A resource or shader pack, for the selected instance.
     Pack(packs::Kind),
     /// A data pack: it goes into a world.
@@ -48,7 +49,7 @@ fn is_build(file: &Path) -> bool {
     crate::build_import::holds_game(file)
 }
 
-fn open(file: &Path) -> Result<zip::ZipArchive<fs::File>, String> {
+pub(crate) fn open(file: &Path) -> Result<zip::ZipArchive<fs::File>, String> {
     fs::File::open(file)
         .ok()
         .and_then(|f| zip::ZipArchive::new(f).ok())
@@ -110,6 +111,13 @@ pub fn what(file: &Path) -> Result<Dropped, String> {
         .collect::<Result<_, _>>()
         .map_err(|e| e.to_string())?;
     let under = |p: &str| names.iter().any(|n| n.starts_with(p));
+    if names.iter().any(|n| {
+        n.as_ref() == "level.dat"
+            || n.split_once('/')
+                .is_some_and(|(folder, file)| !folder.is_empty() && file == "level.dat")
+    }) {
+        return Ok(Dropped::World);
+    }
     if has("manifest.json") && !has("pack.mcmeta") {
         return Ok(Dropped::Modpack);
     }
@@ -143,7 +151,12 @@ pub fn what(file: &Path) -> Result<Dropped, String> {
 /// `kubejs/`...), as long as it stays inside.
 fn target(home: &Path, relative: &str, java: bool) -> Option<PathBuf> {
     let path = Path::new(relative);
-    if relative.ends_with('/') || !path.components().all(|c| matches!(c, Component::Normal(_))) {
+    if relative.ends_with('/')
+        || relative
+            .split('/')
+            .any(|s| s.contains(['\\', ':']) || s.ends_with(['.', ' ']))
+        || !path.components().all(|c| matches!(c, Component::Normal(_)))
+    {
         return None;
     }
     // The browser's list of what it installed is the launcher's, never a pack's: it names the
@@ -233,7 +246,15 @@ fn import_any(
         .find_map(|name| create(&name).ok())
         .ok_or_else(|| format!("Could not make an instance called {base}."))?;
     let home = instance.home.clone();
-    let filled = fill(&mut zip, index.as_ref(), &home, java, progress, limit);
+    let filled = fill(
+        &mut zip,
+        index.as_ref(),
+        &home,
+        java,
+        progress,
+        limit,
+        &OVERRIDES,
+    );
     if let Err(e) = filled {
         let _ = fs::remove_dir_all(&home);
         return Err(e);
@@ -250,6 +271,27 @@ fn size_text(limit: u64) -> String {
     }
 }
 
+/// Apply a CurseForge pack's override directory inside the newly-created game home.
+pub(crate) fn curse_overrides(
+    file: &Path,
+    home: &Path,
+    folder: &str,
+    progress: &dyn Fn(&str, f32),
+) -> Result<(), String> {
+    if super::browser::safe_name(folder).is_none() {
+        return Err(crate::i18n::tr("Invalid pack manifest.").into());
+    }
+    fill(
+        &mut open(file)?,
+        Some(&serde_json::Value::Null),
+        home,
+        true,
+        progress,
+        MAX_IMPORT,
+        &[&format!("{folder}/")],
+    )
+}
+
 fn fill(
     zip: &mut zip::ZipArchive<fs::File>,
     index: Option<&serde_json::Value>,
@@ -257,6 +299,7 @@ fn fill(
     java: bool,
     progress: &dyn Fn(&str, f32),
     limit: u64,
+    prefixes: &[&str],
 ) -> Result<(), String> {
     let count = zip.len();
     let mut total = 0u64;
@@ -264,7 +307,7 @@ fn fill(
         let mut entry = zip.by_index(i).map_err(|e| e.to_string())?;
         let name = entry.name().map_err(|e| e.to_string())?.into_owned();
         let relative = match index {
-            Some(_) => match OVERRIDES.iter().find_map(|o| name.strip_prefix(o)) {
+            Some(_) => match prefixes.iter().find_map(|o| name.strip_prefix(o)) {
                 Some(r) => r.to_string(),
                 None => continue,
             },

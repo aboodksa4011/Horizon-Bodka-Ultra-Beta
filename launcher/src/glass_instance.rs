@@ -180,6 +180,9 @@ impl Launcher {
         cx: &mut Context<Self>,
     ) -> Option<Stateful<Div>> {
         let d = self.instances.dialog.as_ref()?;
+        if d.editing.is_none() && self.page == Page::Dashboard {
+            return Some(self.library_form(cx));
+        }
         let busy = d.busy;
         let editing = d
             .editing
@@ -230,6 +233,173 @@ impl Launcher {
                 )
                 .child(card),
         )
+    }
+
+    fn library_form(&mut self, cx: &mut Context<Self>) -> Stateful<Div> {
+        let t = self.theme;
+        let d = self.instances.dialog.as_ref().expect("open library form");
+        let (kind, copy, advanced, busy, error) =
+            (d.java.kind, d.copy, d.advanced, d.busy, d.error.clone());
+        let name = self.servers.value(Field::InstanceName).to_owned();
+        let picture = self.draft_icon(None, kind, &name, 54.);
+        let rtl = i18n::is_rtl();
+        let name_field = self.field(Field::InstanceName, tr("Library name"), 320., cx);
+        let mut modes = div()
+            .flex()
+            .flex_wrap()
+            .gap(px(6.))
+            .when(rtl, |d| d.flex_row_reverse());
+        let selected = self.draft_loader();
+        let mut choices = vec![
+            (NewKind::Horizon, None, "Horizon Rust"),
+            (NewKind::Vanilla, None, "Vanilla"),
+        ];
+        choices.extend(
+            loaders()
+                .into_iter()
+                .map(|l| (NewKind::Modded, Some(l), l.name())),
+        );
+        for (game, loader, label) in choices {
+            modes = modes.child(
+                button(
+                    format!("library-mode-{label}"),
+                    label,
+                    if kind == game && loader.is_none_or(|l| l == selected) {
+                        Kind::Primary
+                    } else {
+                        Kind::Secondary
+                    },
+                    &t,
+                )
+                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                    this.pick_kind(game, cx);
+                    if let Some(l) = loader {
+                        this.change(|j| j.loader = l);
+                    }
+                    cx.notify();
+                })),
+            );
+        }
+        let versions = if kind == NewKind::Horizon {
+            self.horizon_versions(cx)
+        } else {
+            self.load_versions(cx);
+            self.minecraft_versions(cx)
+        };
+        let mut body = div()
+            .id("library-form-scroll")
+            .overflow_y_scroll()
+            .min_h_0()
+            .flex_1()
+            .flex()
+            .flex_col()
+            .gap(px(18.))
+            .px(px(28.))
+            .py(px(20.))
+            .child(
+                ui::text(29., FontWeight::BOLD, 1.)
+                    .when(rtl, |d| d.text_right())
+                    .child(tr("Create library")),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(14.))
+                    .when(rtl, |d| d.flex_row_reverse())
+                    .child(
+                        div()
+                            .id("library-picture")
+                            .cursor_pointer()
+                            .child(picture)
+                            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                                this.choose_instance_picture(cx);
+                                cx.notify();
+                            })),
+                    )
+                    .child(section(tr("Library name").into(), None, name_field.flex_1()).flex_1()),
+            )
+            .child(versions)
+            .child(section(tr("Game engine").into(), None, modes))
+            .child(
+                button(
+                    "library-more-options",
+                    "Additional settings",
+                    Kind::Ghost,
+                    &t,
+                )
+                .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                    if let Some(d) = this.instances.dialog.as_mut() {
+                        d.advanced = !d.advanced;
+                    }
+                    cx.notify();
+                })),
+            );
+        if advanced {
+            body = body.child(self.field(Field::InstanceGroup, tr("No group"), 320., cx));
+            if kind == NewKind::Horizon {
+                body = body.child(self.start_from(copy, cx));
+            }
+            if kind == NewKind::Modded {
+                body = body.child(self.loader_choice(cx));
+            }
+            if kind != NewKind::Horizon {
+                let value = self.instances.dialog.as_ref().and_then(|d| d.memory_mb);
+                let mut memory = div().flex().flex_wrap().gap(px(6.));
+                for mb in [None, Some(2048u32), Some(4096), Some(8192)] {
+                    let label = mb.map_or_else(
+                        || tr("Automatic").to_owned(),
+                        |v| format!("{} GiB", v / 1024),
+                    );
+                    memory = memory.child(
+                        button(
+                            format!("library-heap-{mb:?}"),
+                            label,
+                            if mb == value {
+                                Kind::Primary
+                            } else {
+                                Kind::Secondary
+                            },
+                            &t,
+                        )
+                        .on_click(cx.listener(
+                            move |this, _: &ClickEvent, _, cx| {
+                                if let Some(d) = &mut this.instances.dialog {
+                                    d.memory_mb = mb;
+                                }
+                                cx.notify();
+                            },
+                        )),
+                    );
+                }
+                body = body.child(section(tr("Memory").into(), None, memory));
+            }
+            body = body
+                .child(self.icon_choice(None, kind, cx))
+                .child(self.library_paste_button(cx));
+            if let Some(review) = self.library_review(cx) {
+                body = body.child(review);
+            }
+        }
+        let foot = self.instance_foot(None, copy, busy, error, cx);
+        div()
+            .id("instance-dialog")
+            .absolute()
+            .inset_0()
+            .occlude()
+            .flex()
+            .justify_center()
+            .on_scroll(|_, _, cx| cx.stop_propagation())
+            .bg(t.side.opacity(0.97))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .size_full()
+                    .max_w(px(980.))
+                    .child(body)
+                    .child(foot),
+            )
     }
 
     /// The loader a modded instance plays (or will).

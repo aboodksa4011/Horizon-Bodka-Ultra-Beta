@@ -6,7 +6,9 @@
 mod agents_page;
 mod art;
 mod blocks;
+mod classic_game;
 mod bodka;
+mod libraries;
 mod cli;
 mod cli_tools;
 mod collection;
@@ -113,6 +115,7 @@ use theme::Theme;
 #[derive(Clone, Copy, PartialEq)]
 enum Page {
     Dashboard,
+    Library,
     Dual,
     Downloads,
     Worlds,
@@ -145,6 +148,7 @@ impl Page {
             Ok("servers") => Page::Servers,
             Ok("wardrobe") if horizon_cosmetics::forced() => Page::Wardrobe,
             Ok("shop") if horizon_cosmetics::forced() => Page::Shop,
+            Ok("library" | "instance-mods" | "worlds" | "multiplayer" | "packs" | "screenshots" | "console") => Page::Library,
             Ok("dual") => Page::Dual,
             Ok("versions") => Page::Versions,
             Ok("notes") => Page::Notes,
@@ -255,6 +259,7 @@ struct Launcher {
     /// The glass Settings page's own scroll: its sections beside their list.
     settings_pane: Scrollbar,
     dual: dual_page::Catalog,
+    library: libraries::Workspace,
     /// The section the glass Settings list marked when last drawn (`glass_settings`).
     settings_marked: usize,
     /// The Mods page's project card, kept in view beside its list.
@@ -617,6 +622,7 @@ impl Launcher {
             switches: 0,
             pending_page: None,
             previous_page: None,
+            library: Default::default(),
             content_scroll: Scrollbar::default(),
             settings_pane: Scrollbar::default(),
             dual: Default::default(),
@@ -935,6 +941,7 @@ impl Launcher {
     }
 
     fn show_page(&mut self, page: Page) {
+        self.library.visit(self.page, page);
         self.previous_page=Some(self.page);
         self.page=page;
         self.pending_page=None;
@@ -1167,6 +1174,8 @@ impl Launcher {
                 Msg::DualBindings(g, bindings) => self.dual_bindings(g,bindings),
                 Msg::DualScanned(g, summary) => self.dual_scanned(g,summary),
                 Msg::DualImported(origin, result) => self.dual_imported(origin,result),
+                Msg::LibraryProgress(id, line) => self.library.progress(id, line),
+                Msg::LibraryPrepared(id, result) => self.library.finished(id, result),
                 Msg::DualRepairLine(line) => self.dual_repair_line(line),
                 Msg::DualRepaired(result) => self.dual_repaired(result),
                 Msg::Releases(r) => {
@@ -1496,6 +1505,7 @@ impl Launcher {
                 // Old versions log their session; it never reaches the window.
                 Msg::Line(_, line) if line.contains("Session ID is") => {}
                 Msg::Line(job, line) => {
+                    if job==Job::Client {self.library.watch_client_line(&line);}
                     if job == Job::Client && line.starts_with(perf::GAME_FIRST_FRAME) {
                         if let Some(pressed) = self.play_pressed.take() {
                             self.perf
@@ -1514,6 +1524,7 @@ impl Launcher {
                 Msg::Exit(job, result) => {
                     // A preparation (or a build) ended: the disk may have changed under the pages.
                     backend::forget_prepared();
+                    if matches!(job,Job::Prepare) {self.library.horizon_finished(&result);}
                     let error = result.err();
                     match job {
                         Job::Prepare => {
@@ -1610,6 +1621,7 @@ impl Launcher {
             }
         }
         changed |= self.servers_tick();
+        self.next_library_preparation();
         changed |= self.mods_tick();
         changed |= self.github_tick();
         changed |= self.native_log_read(cx);
@@ -1624,6 +1636,7 @@ impl Launcher {
                     self.load_auth_statuses(false);
                     // Sign-in refuses accounts that don't own the game.
                     self.owner = Some(true);
+                    if let Some(id)=self.library.signed_in() {if let Some(i)=self.instances.list.iter().find(|i|i.id==id).cloned(){self.prepare_new_library(&i,cx);}}
                     self.owner_screen_open = false;
                     self.client_error = None;
                     if !self.settings.owner_notice_seen {
@@ -1791,6 +1804,10 @@ impl Launcher {
         let Some(tag) = self.selected().cloned() else {
             return;
         };
+        self.prepare_tag(tag, from);
+    }
+
+    fn prepare_tag(&mut self, tag:String, from:backend::MinecraftFrom) {
         horizon_launcher::mojang::CANCEL.store(false, Ordering::Relaxed);
         let minecraft = self
             .settings
@@ -1846,16 +1863,16 @@ impl Launcher {
             // Mojang's game: no Horizon version or preparation, only no game already running.
             // It joins a server; a friend's code and opening a world are Horizon's.
             self.joining = None;
-            let server = self
-                .quick_play
-                .take()
-                .filter(|(flag, _)| *flag == "--server")
-                .map(|(_, ip)| ip);
+            let destination=self.quick_play.take();
             if self.client.is_some() || self.starting_client.is_some() {
                 return;
             }
             self.starting_pack = None;
-            self.start_java(instance, server);
+            match destination {
+                Some(("--world",folder))=>self.start_java_at(instance,None,Some(folder)),
+                Some(("--server",address))=>self.start_java(instance,Some(address)),
+                _=>self.start_java(instance,None),
+            }
             return;
         }
         let Some(tag) = self.selected().cloned() else {
@@ -1886,6 +1903,11 @@ impl Launcher {
     /// (downloaded the first time, their lines in the log), then `drain` starts the game when
     /// the command arrives.
     fn start_java(&mut self, instance: instances::Instance, server: Option<String>) {
+        self.start_java_at(instance,server,None);
+    }
+
+    fn start_java_at(&mut self, instance: instances::Instance, server: Option<String>, world:Option<String>) {
+        self.library.begin_game(&instance.id,server.as_deref());
         self.client_error = None;
         self.crash = None;
         self.prepare_log.clear();
@@ -1897,7 +1919,8 @@ impl Launcher {
             let log = |line: String| {
                 let _ = tx.send(Msg::Line(Job::Client, line));
             };
-            let cmd = backend::java_game(&instance, server.as_deref(), &log).map(|mut cmd| {
+            let launch=match world {Some(folder)=>backend::java_world(&instance,&folder,&log),None=>backend::java_game(&instance,server.as_deref(),&log)};
+            let cmd = launch.map(|mut cmd| {
                 let vars = instance.vars(cmd.get_program());
                 cmd.envs(vars.iter().map(|(k, v)| (k, v)));
                 (horizon_launcher::launch::wrap(cmd, &instance.launch), vars)
@@ -1932,6 +1955,7 @@ impl Launcher {
     /// Starts the game: the session first (a network round trip when the token needs
     /// renewing), then `drain` starts the process when it arrives.
     fn start_client(&mut self, tag: String) {
+        self.library.end_java_session();
         self.client_error = None;
         self.crash = None;
         self.prepare_log.clear();
@@ -3619,7 +3643,7 @@ impl Launcher {
                     ),
                     &t,
                 ));
-            } else if self.accounts.selected().is_none() && account::client_id().is_some() {
+            } else if self.accounts.selected().is_none() && account::sign_in_available() {
                 rows = rows.child(index_row(
                     5,
                     tr("Playing offline"),
@@ -4614,7 +4638,7 @@ impl Launcher {
     /// happening (the code to enter, a problem), and its buttons.
     fn sign_in_parts(&self, cx: &mut Context<Self>) -> (String, Div, Option<AnyElement>) {
         let t = self.theme;
-        let configured = account::client_id().is_some();
+        let configured = account::sign_in_available();
         let busy = matches!(
             self.sign_in_state,
             Some(SignInState::Starting | SignInState::Code(_) | SignInState::Working(_))
@@ -5434,15 +5458,17 @@ impl Render for Launcher {
         self.window_long_side = f32::from(size.width).max(f32::from(size.height));
         self.scale_factor = window.scale_factor();
         let content = match self.page {
-            Page::Dashboard => self.bodka_dashboard(cx),
+            Page::Dashboard => self.library_home(cx),
+            Page::Library => self.library_editor(cx),
             Page::Dual => self.dual_page(cx),
             Page::Downloads => self.bodka_downloads(cx),
             Page::Worlds => self.bodka_worlds(cx),
             Page::Performance => self.bodka_performance(cx),
             Page::Diagnostics => self.bodka_diagnostics(cx),
             Page::About => self.bodka_about(cx),
-            Page::Play => self.play_page(cx),
+            Page::Play => div().flex().flex_col().children(self.mod_mismatch_notice(cx)).child(self.play_page(cx)),
             Page::Versions => self.versions_page(cx),
+            Page::Mods if self.library.browsing_library() => div().flex().flex_col().child(self.library_back(cx)).child(self.mods_page(cx)),
             Page::Mods => self.mods_page(cx),
             Page::Servers => self.servers_page(cx),
             Page::Wardrobe => self.wardrobe_page(cx),
@@ -5453,20 +5479,19 @@ impl Render for Launcher {
         self.sky.free_replaced(window);
         self.pictures.free_retired(window);
         self.wardrobe_marks.free_replaced(window);
-        // The new page fades in and rises a few pixels, as the website's tabs do (`hzl-pop`).
-        let departure=self.pending_page.map_or(1.,|(_,at)|1.-motion::fade(at.elapsed().as_secs_f32()/motion::duration(110).as_secs_f32()));
+        // Only opacity changes, so pages retain their hit areas and scroll bounds.
+        let departure = self.pending_page.map_or(1., |(_, at)| {
+            1. - motion::fade(at.elapsed().as_secs_f32() / motion::duration(110).as_secs_f32())
+        });
         let pane_scrolls = t.glass && self.page == Page::Settings;
         let content = div()
-            .relative()
-            .w_full()
+            .relative().w_full().min_w_0()
             .when(pane_scrolls, |d| d.h_full().min_h_0())
-            // Let the page shrink inside the padded flex row so long notices can wrap.
-            .min_w_0()
-            .child(div().when(pane_scrolls, |d| d.h_full().min_h_0()).opacity(departure).child(content))
+            .child(content)
             .with_animation(
-                ElementId::named_usize("page", self.switches),
+                ElementId::named_usize("bodka-flat-page", self.switches),
                 motion::eased(motion::POP),
-                |d, p| d.opacity(p).top(px(if motion::spatial() { motion::POP_RISE * (1. - p) } else { 0. })),
+                move |d, p| d.opacity(p * departure),
             );
         let (reveal, held) = self.opening_phase(window);
         let ui = ease_out_cubic((reveal - 0.3) / 0.7);
@@ -5548,11 +5573,12 @@ impl Render for Launcher {
                 }
             }))
             .capture_any_mouse_down(|_, _, _| KEYBOARD.store(false, Ordering::Relaxed))
-            .on_mouse_move(cx.listener(|this, ev: &gpui::MouseMoveEvent, window, cx| {
-                let size = window.viewport_size();
-                this.scene
-                    .update(cx, |scene, cx| scene.point(ev.position, size, cx));
-            }))
+            .when(self.settings.theme.is_some(), |root| {
+                root.on_mouse_move(cx.listener(|this, ev: &gpui::MouseMoveEvent, window, cx| {
+                    let size = window.viewport_size();
+                    this.scene.update(cx, |scene, cx| scene.point(ev.position, size, cx));
+                }))
+            })
             .relative()
             .flex()
             .flex_col()
@@ -5901,7 +5927,7 @@ fn main() {
                 |window, cx| cx.new(|cx| Launcher::new(window, cx)),
             )
             .expect("window");
-            cx.on_window_closed(|cx, _| shut_down(cx)).detach();
+            cx.on_window_closed(|cx, _| { if cx.windows().is_empty() { shut_down(cx); } }).detach();
             cx.activate(true);
         });
 }

@@ -47,6 +47,7 @@ pub(super) enum Field {
     InstanceVersion,
     /// Home's Mods tab's filter (`instance_mods.rs`).
     InstanceModsFilter,
+    LibraryJoin,
     /// Home's Multiplayer section's (`multiplayer_page.rs`).
     ServerName,
     ServerAddress,
@@ -69,7 +70,7 @@ pub(super) enum Field {
 }
 
 impl Field {
-    const ALL: [Field; 25] = [
+    const ALL: [Field; 26] = [
         Field::Name,
         Field::Seed,
         Field::Players,
@@ -83,6 +84,7 @@ impl Field {
         Field::InstanceGroup,
         Field::InstanceVersion,
         Field::InstanceModsFilter,
+        Field::LibraryJoin,
         Field::ServerName,
         Field::ServerAddress,
         Field::ConsoleSearch,
@@ -1213,6 +1215,7 @@ impl Launcher {
             }
             Field::MemoryLimit => self.memory_enter(),
             Field::OfflineName => self.offline_name_enter(),
+            Field::LibraryJoin => {}
             Field::ShopGift => self.shop.find_soon = true,
             Field::ServerName | Field::ServerAddress => self.add_server(),
         }

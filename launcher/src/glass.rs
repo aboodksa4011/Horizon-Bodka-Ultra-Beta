@@ -59,7 +59,15 @@ struct Pieces {
 const LIGHT_GLASS: f32 = 0.84;
 const LIGHT_FLOAT: f32 = 0.94;
 
+struct Wallpaper {
+    image: Arc<RenderImage>,
+    frame: usize,
+    brightness: f32,
+    dim: f32,
+}
+
 thread_local! {
+    static WALLPAPER: RefCell<Option<Wallpaper>> = const { RefCell::new(None) };
     static BODKA: Cell<Option<horizon_launcher::bodka_settings::Palette>> = const { Cell::new(None) };
     static PIECES: RefCell<Pieces> = RefCell::new(Pieces {
         backdrop: None,
@@ -77,7 +85,69 @@ thread_local! {
     });
 }
 
-pub fn set_bodka(palette: Option<horizon_launcher::bodka_settings::Palette>) { BODKA.set(palette); }
+pub fn set_bodka(palette: Option<horizon_launcher::bodka_settings::Palette>) {
+    BODKA.set(palette);
+    if palette.is_none() {
+        WALLPAPER.with_borrow_mut(|photo| *photo = None);
+    }
+}
+
+pub fn bodka_active() -> bool {
+    BODKA.get().is_some()
+}
+
+pub fn set_wallpaper(image: Option<Arc<RenderImage>>, frame: usize, brightness: f32, dim: f32) {
+    WALLPAPER.with_borrow_mut(|photo| {
+        *photo = image.map(|image| Wallpaper {
+            frame: frame.min(image.frame_count().saturating_sub(1)),
+            image,
+            brightness,
+            dim,
+        });
+    });
+}
+
+fn paint_frost(
+    bounds: Bounds<Pixels>,
+    corners: Corners<Pixels>,
+    kind: Kind,
+    palette: horizon_launcher::bodka_settings::Palette,
+    window: &mut Window,
+) {
+    WALLPAPER.with_borrow(|photo| {
+        if let Some(photo) = photo {
+            let viewport = Bounds::new(gpui::point(px(0.), px(0.)), window.viewport_size());
+            let fitted = gpui::ObjectFit::Cover.get_bounds(viewport, photo.image.size(photo.frame));
+            let _ = window.paint_image(
+                bounds,
+                fitted,
+                corners,
+                photo.image.clone(),
+                photo.frame,
+                false,
+            );
+            if photo.brightness != 1. {
+                let wash = if photo.brightness < 1. {
+                    gpui::black().opacity(1. - photo.brightness)
+                } else {
+                    gpui::white().opacity((photo.brightness - 1.) * 0.5)
+                };
+                window.paint_quad(gpui::fill(bounds, wash).corner_radii(corners));
+            }
+            if photo.dim > 0. {
+                window.paint_quad(
+                    gpui::fill(bounds, gpui::black().opacity(photo.dim)).corner_radii(corners),
+                );
+            }
+        }
+    });
+    let tint = if kind == Kind::Float {
+        (palette.opacity + 0.15).min(0.86)
+    } else {
+        palette.opacity
+    };
+    window.paint_quad(gpui::fill(bounds, rgb(palette.panel).opacity(tint)).corner_radii(corners));
+}
 
 /// Performance mode's plates: solid, with no glass behind them.
 pub fn set_plain(plain: bool) {
@@ -174,11 +244,38 @@ pub fn begin_build(window: &mut Window) {
 /// A plate's backdrop with its corners: put it first inside a `relative` element, the content
 /// after it. In performance mode it is a solid colour: no backdrop, no glass.
 pub fn backdrop(kind: Kind, radius: f32) -> AnyElement {
-    if let Some(p) = BODKA.get() {
-        return div().absolute().top_0().left_0().size_full().rounded(px(radius.min(p.radius)))
-            .bg(rgb(p.panel).opacity(if kind == Kind::Float { 0.99 } else {p.opacity}))
-            .border_1().border_color(rgb(p.accent).opacity(0.13))
-            .shadow(vec![gpui::BoxShadow {color:gpui::black().opacity(p.shadow),offset:gpui::point(px(0.),px(4.)),blur_radius:px(14.),spread_radius:px(0.),inset:false}])
+    if let Some(palette) = BODKA.get() {
+        let material = canvas(
+            |_, _, _| {},
+            move |bounds, (), window, _| {
+                paint(bounds, kind, Corners::all(px(radius)), window);
+            },
+        )
+        .absolute()
+        .top_0()
+        .left_0()
+        .size_full();
+        let edge = div()
+            .absolute()
+            .size_full()
+            .rounded(px(radius))
+            .border_1()
+            .border_color(rgb(palette.ink).opacity(0.12));
+        return div()
+            .absolute()
+            .size_full()
+            .rounded(px(radius))
+            .when(kind == Kind::Float && radius > 0., |d| {
+                d.shadow(vec![gpui::BoxShadow {
+                    color: gpui::black().opacity(palette.shadow),
+                    offset: gpui::point(px(0.), px(3.)),
+                    blur_radius: px(12.),
+                    spread_radius: px(0.),
+                    inset: false,
+                }])
+            })
+            .child(material)
+            .when(radius > 0., |d| d.child(edge))
             .into_any_element();
     }
     let (plain, look) = PIECES.with_borrow(|p| (p.plain, p.look));
@@ -284,6 +381,10 @@ fn build_dark_full_image(
 }
 
 fn paint(bounds: Bounds<Pixels>, kind: Kind, corners: Corners<Pixels>, window: &mut Window) {
+    if let Some(palette) = BODKA.get() {
+        paint_frost(bounds, corners, kind, palette, window);
+        return;
+    }
     let viewport = window.viewport_size();
     let (vw, vh) = (f32::from(viewport.width), f32::from(viewport.height));
     if vw <= 0. || vh <= 0. {
@@ -348,6 +449,9 @@ pub fn tabbed(strip: Rc<Cell<Option<Size<Pixels>>>>) -> impl IntoElement {
     canvas(
         |_, _, _| {},
         move |bounds, (), window, _| {
+            if bodka_active() {
+                return paint(bounds, Kind::Glass, Corners::all(px(18.)), window);
+            }
             let tw = f32::from(bounds.size.width).round();
             let th = f32::from(bounds.size.height).round();
             let Some(s) = strip.get() else {

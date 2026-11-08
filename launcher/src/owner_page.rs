@@ -32,6 +32,7 @@ impl Launcher {
     /// Closes it; it comes back with the next refused Play.
     fn close_owner_screen(&mut self) {
         self.cancel_sign_in();
+        self.library.cancel_login_action();
         self.owner_screen_open = false;
         if !self.settings.owner_notice_seen {
             self.settings.owner_notice_seen = true;
@@ -42,7 +43,7 @@ impl Launcher {
     pub(crate) fn owner_screen(&mut self, cx: &mut Context<Self>) -> Stateful<Div> {
         let t = self.theme;
         let n = t.night;
-        let configured = account::client_id().is_some();
+        let configured = account::sign_in_available();
         // The screenshot preview shows a code without asking Microsoft for one.
         let state = match &self.sign_in_state {
             _ if sign_in_preview() => Shown::Code("https://www.microsoft.com/link", "K7Q-4MXR"),
@@ -275,6 +276,9 @@ impl Launcher {
                     .flex()
                     .flex_col()
                     .gap(px(8.))
+                    .when(account::client_id().is_none() && account::sign_in_available(), |d| {
+                        d.child(ui::text(14., FontWeight::NORMAL, ink::BODY).child(tr("Official Horizon handles this optional Microsoft link for BODKA.")))
+                    })
                     .child(ui::text(14., FontWeight::NORMAL, ink::BODY).child(tr(
                         "Horizon needs a Microsoft account that owns Minecraft: Java Edition, like other launchers.",
                     )))
@@ -380,6 +384,7 @@ impl Launcher {
                 .into_any_element(),
             ),
         };
+        let guest = crate::classic_game::button("gate-classic", &t, cx);
         let later = ui::button("owner-later".into(), tr("Not now").into(), Kind::Ghost, &t)
             .h(px(44.))
             .px(px(20.))
@@ -394,7 +399,7 @@ impl Launcher {
                 .gap(px(8.))
                 .mt(px(24.))
                 .children(main)
-                .child(later),
+                .child(guest).child(later),
         );
         if matches!(state, Shown::Code(..)) {
             card = card.child(

@@ -45,6 +45,30 @@ pub fn game_of(index: &Value) -> Result<(String, Option<Loader>), String> {
     Ok((minecraft.to_string(), loader))
 }
 
+/// Import the selected archive into its own Java library; a catalog selection must match its advertised target.
+pub fn import_java_pack(
+    file: &Path,
+    progress: &dyn Fn(&str, f32),
+    expected: Option<&crate::browser::java_instance::Target>,
+) -> Result<Instance, String> {
+    if file
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("zip"))
+    {
+        return crate::browser::curse_pack::import(file, progress, expected);
+    }
+    let (minecraft, loader) = game_of(&import::mrpack_index(file)?)?;
+    if expected.is_some_and(|t| {
+        t.minecraft != minecraft || t.loader != loader.as_ref().map(|l| l.kind.id().to_owned())
+    }) {
+        return Err(crate::i18n::tr(
+            "The file does not match this library's game version and loader.",
+        )
+        .into());
+    }
+    import(file, progress)
+}
+
 /// Makes a Java instance from the `.mrpack` `file`, named after the pack.
 pub fn import(file: &Path, progress: &dyn Fn(&str, f32)) -> Result<Instance, String> {
     let (minecraft, loader) = game_of(&import::mrpack_index(file)?)?;

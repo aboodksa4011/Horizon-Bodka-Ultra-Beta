@@ -13,6 +13,11 @@
 //! The Azure app (client ID) is Horizon's own and is configuration: `HORIZON_MSA_CLIENT_ID` at
 //! build time, or at run time to override it. Without one, sign-in says it is not configured.
 pub mod session;
+#[cfg(windows)]
+mod horizon_link;
+
+pub fn sign_in_available() -> bool { client_id().is_some() || cfg!(all(windows, target_arch = "x86_64")) }
+
 
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -1799,6 +1804,10 @@ pub fn launch(
             break;
         }
         let plays = Some(&account.uuid) == selected.as_ref();
+        #[cfg(all(windows, target_arch = "x86_64"))]
+        if horizon_link::applicable(ep, client_id, store) && secrets_in(store, &account.uuid).is_some_and(|s| !s.sign_in_required && s.minecraft_expires_at <= now() + RENEW_BEFORE) {
+            let _ = horizon_link::refresh(&account.uuid);
+        }
         let operation = session::lock(store);
         let Some(secrets) = secrets_in(store, &account.uuid) else {
             if plays {
@@ -2055,6 +2064,10 @@ impl SignIn {
             let set = |s| *thread_state.lock().unwrap() = s;
             let result = (|| {
                 let ep = Endpoints::live();
+                #[cfg(all(windows, target_arch = "x86_64"))]
+                if client_id().is_none() {
+                    return horizon_link::sign_in(expected.as_ref(), &thread_cancel, set);
+                }
                 let client_id = client_id().ok_or(NOT_CONFIGURED)?;
                 let code = device_code(&ep, &client_id)?;
                 set(SignInState::Code(code.clone()));

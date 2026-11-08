@@ -496,7 +496,8 @@ pub fn menu_row(
 /// material beside them), round at 16 with 6 px around its rows, a shadow setting it above the
 /// card under it.
 pub fn popover(width: f32) -> Div {
-    crate::glass::plate(radius::POPOVER)
+    let plate = if crate::glass::bodka_active() { crate::glass::float(radius::POPOVER) } else { crate::glass::plate(radius::POPOVER) };
+    plate
         .shadow_lg()
         .w(px(width))
         .p(px(6.))
@@ -520,6 +521,9 @@ pub fn scrim() -> Hsla {
 /// A dialog's plate, round at `radius` (`hzl-glass` over the scrim): its piece of the scene
 /// under the scrim's dimming, then the plates' white. The content goes after it.
 pub fn dialog_plate(radius: f32) -> Div {
+    if crate::glass::bodka_active() {
+        return crate::glass::float(radius).border_1().border_color(white(0.14));
+    }
     let layer = |c: Hsla| {
         div()
             .absolute()

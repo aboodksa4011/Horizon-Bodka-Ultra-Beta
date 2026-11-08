@@ -56,10 +56,10 @@ impl Launcher {
             .map_or_else(|| "Horizon".to_owned(), |i| i.name.clone());
         let head = ui::page_head(
             tr("Mods"),
-            trf(
+            if self.mods.strict {trf("Compatible content for {instance}",&[("instance",&instance)])}else{trf(
                 "Everything you install goes into {instance}. Pick another instance on the left to fill that one.",
                 &[("instance", &instance)],
-            ),
+            )},
         )
         .pt_0()
         .mb_0();
@@ -80,6 +80,7 @@ impl Launcher {
             );
         }
         let header = div()
+            .flex_wrap()
             .flex()
             .items_end()
             .justify_between()
@@ -116,7 +117,7 @@ impl Launcher {
             .gap(px(12.))
             .px(px(8.))
             .pb(px(8.))
-            .when(!registry && !java, |d| {
+            .when(!registry && !java && !self.mods.strict, |d| {
                 d.child(
                     div()
                         .id("mods-everything")
@@ -139,8 +140,16 @@ impl Launcher {
                         })),
                 )
             })
-            .when(switches(self.mods.kind) && !java, |d| {
-                d.child(self.glass_source_switch(cx))
+            .when(
+                switches(self.mods.kind)
+                    && (!java || browser::curseforge::CurseForge::from_env().is_some()),
+                |d| d.child(self.glass_source_switch(cx)),
+            )
+            .when(java && open == PackKind::Shader, |d| {
+                d.child(
+                    ui::text(13., FontWeight::NORMAL, 0.7)
+                        .child(tr("Shader packs for Java need Iris or Oculus in the game.")),
+                )
             })
             .child(self.mods_filters(cx))
             .children(self.mods_target_line(cx));
@@ -210,9 +219,19 @@ impl Launcher {
     /// after them as coming soon, shown, inert, never searched, as in the mockup.
     fn glass_source_switch(&mut self, cx: &mut Context<Self>) -> Div {
         let t = self.theme;
-        let current = self.mods.source;
+        let java = self.mods.java_for(self.mods.kind).is_some();
+        let current = if java && self.mods.source == SourceId::Horizon {
+            SourceId::Modrinth
+        } else {
+            self.mods.source
+        };
+        let available = browser::curseforge::CurseForge::from_env().is_some();
         let mut row = div().flex().items_center().gap(px(4.));
-        for (source, label) in SOURCES {
+        for (source, label) in SOURCES
+            .into_iter()
+            .filter(|(s, _)| !java || *s != SourceId::Horizon)
+            .chain(available.then_some((SourceId::CurseForge, "CurseForge")))
+        {
             row = row.child(
                 small_tab(
                     SharedString::from(format!("mods-source-{label}")),
@@ -232,18 +251,7 @@ impl Launcher {
                 })),
             );
         }
-        row.child(
-            div()
-                .flex()
-                .items_center()
-                .gap(px(6.))
-                .h(px(32.))
-                .px(px(12.))
-                .text_size(px(13.))
-                .text_color(white(0.35))
-                .child("CurseForge")
-                .child(tr("soon").to_string()),
-        )
+        row
     }
 
     /// The "Sort by" dropdown beside the search: as tall and as round as the search, white at
@@ -343,7 +351,7 @@ impl Launcher {
                 .py(px(24.))
                 .child(e.clone());
         }
-        if m.results.is_empty() {
+        if m.results.is_empty() && !m.more {
             let line = if m.searching || !m.searched {
                 tr("Searching…").to_string()
             } else if let Some(target) = m.java_for(m.kind) {
@@ -376,10 +384,9 @@ impl Launcher {
             let icon = self.mods_icon(&p, 40.);
             let m = &self.mods;
             let installed = m.entry(&p).is_some();
-            let busy = m.busy.as_ref().is_some_and(|b| b.0 == p.id);
+            let busy = m.scheduled(&p);
             let checking = m.checking(&p);
-            let can_install =
-                !installed && !checking && m.busy.is_none() && m.support(&p).installable();
+            let can_install = !installed && !checking && !busy && m.support(&p).installable();
             let action: AnyElement = if installed || busy || checking || m.support(&p).installable()
             {
                 let label = if installed {
@@ -414,7 +421,7 @@ impl Launcher {
                 div().flex_none().w(px(20.)).into_any_element()
             };
             // The registry's rows end with downloads, the others' with how they run (`compat`).
-            let right = if p.source == SourceId::Horizon {
+            let right = if p.source == SourceId::Horizon || m.java.is_some() {
                 ui::text(13., FontWeight::NORMAL, 0.5).child(count(p.downloads).to_uppercase())
             } else {
                 let support = m.support(&p);
@@ -437,6 +444,7 @@ impl Launcher {
                 )
                 .px(px(12.))
                 .py(px(10.))
+                .when(i18n::is_rtl(), |d| d.flex_row_reverse())
                 .child(
                     div()
                         .flex_none()
@@ -486,7 +494,7 @@ impl Launcher {
         }
         if self.mods.more {
             let searching = self.mods.searching;
-            let offset = self.mods.results.len();
+            let offset = self.mods.next_offset;
             list = list.child(
                 div().flex().p(px(8.)).child(
                     ui::quiet("mods-more", tr("More"), 36., &t)
@@ -534,7 +542,7 @@ impl Launcher {
         let m = &self.mods;
         let support = m.support(&p);
         let entry = m.entry(&p).cloned();
-        let busy = m.busy.as_ref().map(|b| b.0.clone());
+        let queued = m.scheduled(&p);
         let checking = m.checking(&p);
         let mut by = Vec::new();
         if !p.author.is_empty() {
@@ -578,7 +586,7 @@ impl Launcher {
                 cx.notify();
             }))
             .into_any_element()
-        } else if busy.as_deref() == Some(p.id.as_str()) || checking {
+        } else if queued || checking {
             ui::quiet(
                 "mods-detail-wait",
                 if checking {
@@ -607,13 +615,10 @@ impl Launcher {
                 &t,
             )
             .w_full()
-            .when(busy.is_some(), |d| d.opacity(0.5))
-            .when(busy.is_none(), |d| {
-                d.on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                    this.mods_install(known.source, known.id.clone(), Some(known.clone()));
-                    cx.notify();
-                }))
-            })
+            .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                this.mods_install(known.source, known.id.clone(), Some(known.clone()));
+                cx.notify();
+            }))
             .into_any_element()
         } else {
             ui::quiet("mods-detail-cannot", tr(support.label()), 44., &t)

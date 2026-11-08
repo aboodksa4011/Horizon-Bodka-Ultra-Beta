@@ -16,6 +16,10 @@ pub mod java;
 pub mod java_instance;
 pub mod lock;
 pub mod modrinth;
+pub mod shared_library;
+pub mod local_jar;
+mod local_metadata;
+pub mod curse_pack;
 
 pub use lock::{lock_home, try_lock_home, HomeLockGuard};
 
@@ -255,6 +259,7 @@ pub trait Source: Send + Sync {
     fn project(&self, id: &str) -> Result<Project, String>;
     /// Versions, newest first.
     fn versions(&self, project: &Project) -> Result<Vec<Version>, String>;
+    fn versions_for(&self, project:&Project, _target:&java_instance::Target) -> Result<Vec<Version>,String> { self.versions(project) }
     /// The project's page: description, gallery, links, authors.
     fn details(&self, project: &Project) -> Result<details::Details, String> {
         Ok(details::Details {
@@ -287,7 +292,9 @@ pub const SHADERS_ON_HORIZON: &str =
 /// soon: its API needs a paid key, so no search or install goes to it; `curseforge` is kept for
 /// then.
 pub fn sources() -> Vec<Box<dyn Source>> {
-    vec![Box::new(modrinth::Modrinth), Box::new(horizon::Registry)]
+    let mut available: Vec<Box<dyn Source>> = vec![Box::new(modrinth::Modrinth), Box::new(horizon::Registry)];
+    if let Some(service) = curseforge::CurseForge::from_env() { available.push(Box::new(service)); }
+    available
 }
 
 /// The source of that id, when this launcher can use it.

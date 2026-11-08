@@ -32,6 +32,8 @@ pub(super) enum Look {
     Background(u32, u8),
     /// User-supplied built-in GIF, with original frame timing. A static first frame for reduced motion.
     BodkaFilm(u8, bool),
+    FrostedFilm(u8, bool),
+    FrostedPhoto(u8),
     /// Small and blurred (`glass_shot_blur`).
     Blurred,
 }
@@ -44,6 +46,9 @@ pub(super) struct Pictures {
     making: HashSet<Key>,
     /// Gone from `made`; freed from the window's sprite atlas on the next frame.
     retired: Vec<Arc<RenderImage>>,
+    film_index: usize,
+    film_deadline: Option<Instant>,
+    film_wake_pending: bool,
 }
 
 impl Default for Pictures {
@@ -52,6 +57,9 @@ impl Default for Pictures {
             made: Lru::new(BUDGET, GRACE),
             making: HashSet::new(),
             retired: Vec::new(),
+            film_index: 0,
+            film_deadline: None,
+            film_wake_pending: false,
         }
     }
 }
@@ -78,6 +86,46 @@ impl Pictures {
 }
 
 impl Launcher {
+    /// One clock drives the sharp wallpaper and every frosted panel at the GIF's own pace.
+    pub(super) fn wallpaper_frame(
+        &mut self,
+        image: Option<&RenderImage>,
+        cx: &mut Context<Self>,
+    ) -> usize {
+        let Some(image) = image.filter(|i| i.frame_count() > 1) else {
+            self.pictures.film_index = 0;
+            self.pictures.film_deadline = None;
+            return 0;
+        };
+        let now = Instant::now();
+        let index = &mut self.pictures.film_index;
+        if self
+            .pictures
+            .film_deadline
+            .is_some_and(|deadline| deadline <= now)
+        {
+            *index = (*index + 1) % image.frame_count();
+            self.pictures.film_deadline = None;
+        }
+        let delay = Duration::from(image.delay(*index)).max(Duration::from_millis(16));
+        let deadline = *self.pictures.film_deadline.get_or_insert(now + delay);
+        let frame = *index;
+        if !self.pictures.film_wake_pending {
+            self.pictures.film_wake_pending = true;
+            cx.spawn(async move |this, cx| {
+                cx.background_executor()
+                    .timer(deadline.saturating_duration_since(Instant::now()))
+                    .await;
+                let _ = this.update(cx, |this, cx| {
+                    this.pictures.film_wake_pending = false;
+                    cx.notify();
+                });
+            })
+            .detach();
+        }
+        frame
+    }
+
     /// The side to make a screenshot tile at, for this screen.
     pub(super) fn thumb_side(&self) -> u32 {
         pictures::drawn_side(THUMB_POINTS, self.scale_factor, pictures::gpu_limit())
@@ -138,7 +186,7 @@ impl Launcher {
 /// Makes the picture as GPUI draws it (BGRA, as its own loader does). Runs off the UI thread.
 fn make(path: &Path, look: Look) -> Option<Arc<RenderImage>> {
     match look {
-        Look::BodkaFilm(blur, moving) => {
+        Look::BodkaFilm(blur, moving) | Look::FrostedFilm(blur, moving) => {
             use image::AnimationDecoder;
             let decoder = image::codecs::gif::GifDecoder::new(std::io::Cursor::new(
                 include_bytes!("../assets/bodka/cherry-sunset.gif"),
@@ -151,7 +199,16 @@ fn make(path: &Path, look: Look) -> Option<Arc<RenderImage>> {
                     let frame = frame.ok()?;
                     let delay = frame.delay();
                     let mut buffer = frame.into_buffer();
-                    if blur > 0 {
+                    if matches!(look, Look::FrostedFilm(..)) {
+                        let (w, h) = pictures::fitted(buffer.width(), buffer.height(), 192);
+                        buffer = image::imageops::resize(
+                            &buffer,
+                            w,
+                            h,
+                            image::imageops::FilterType::Triangle,
+                        );
+                        buffer = frost(&buffer, blur);
+                    } else if blur > 0 {
                         buffer = image::imageops::blur(&buffer, f32::from(blur.min(48)));
                     }
                     for pixel in buffer.pixels_mut() {
@@ -163,6 +220,14 @@ fn make(path: &Path, look: Look) -> Option<Arc<RenderImage>> {
             Some(Arc::new(RenderImage::new(frames)))
         }
         Look::Blurred => glass_shot_blur::blurred(path),
+        Look::FrostedPhoto(blur) => {
+            let image = pictures::load_fitted(path, 256.min(pictures::gpu_limit())).ok()?;
+            let mut image = frost(&image, blur);
+            for p in image.pixels_mut() {
+                p.0.swap(0, 2);
+            }
+            Some(Arc::new(RenderImage::new([image::Frame::new(image)])))
+        }
         Look::Fit(max) | Look::Background(max, _) => {
             // Never above the GPU's limit, whatever the caller asked: GPUI's atlas can't hold it.
             let mut image = pictures::load_fitted(path, max.min(pictures::gpu_limit())).ok()?;
@@ -176,5 +241,35 @@ fn make(path: &Path, look: Look) -> Option<Arc<RenderImage>> {
             }
             Some(Arc::new(RenderImage::new([image::Frame::new(image)])))
         }
+    }
+}
+
+/// Blur only the small shared wallpaper texture. Text, icons and hit areas stay at screen resolution.
+fn frost(image: &image::RgbaImage, background_blur: u8) -> image::RgbaImage {
+    image::imageops::blur(image, 3.4 + f32::from(background_blur.min(48)) * 0.18)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wallpaper_glass_blurs_detail_and_preserves_the_light_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("wall.png");
+        let image = image::RgbaImage::from_fn(192, 108, |x, _| {
+            let light = if x < 96 { 40 } else { 180 };
+            let grain = if x % 2 == 0 { 0 } else { 60 };
+            image::Rgba([light + grain, 18, 10, 255])
+        });
+        image.save(&path).unwrap();
+        let rendered = make(&path, Look::FrostedPhoto(0)).unwrap();
+        let bytes = rendered.as_bytes(0).unwrap();
+        let red = |x: usize| bytes[(50 * 192 + x) * 4 + 2];
+        assert!(red(40).abs_diff(red(41)) < 5);
+        assert!(red(152) > red(40) + 110);
+        let film = make(Path::new("bodka:cherry-sunset"), Look::FrostedFilm(0, false)).unwrap();
+        assert_eq!(film.frame_count(), 1);
+        assert_eq!(u32::from(film.size(0).width), 192);
     }
 }

@@ -78,7 +78,27 @@ pub fn export(
     linked: &[Linked],
     out: &Path,
 ) -> Result<Exported, String> {
+    export_game(home, name, format, worlds, linked, out, None)
+}
+
+/// Includes the Java game and loader versions when exporting a library as a modpack.
+pub fn export_game(
+    home: &Path,
+    name: &str,
+    format: Format,
+    worlds: &[String],
+    linked: &[Linked],
+    out: &Path,
+    java: Option<&crate::instances::JavaGame>,
+) -> Result<Exported, String> {
     let mut files: Vec<(String, PathBuf)> = Vec::new();
+    if java.is_some() {
+        walk(home, &home.join("mods"), &[], &mut files);
+        files.retain(|(path, _)| {
+            let name = path.to_ascii_lowercase();
+            name.ends_with(".jar") || name.ends_with(".jar.disabled")
+        });
+    }
     for f in FILES {
         if home.join(f).is_file() {
             files.push((f.to_string(), home.join(f)));
@@ -99,7 +119,7 @@ pub fn export(
         Format::Zip => Vec::new(),
     };
     files.retain(|(rel, _)| !linked.iter().any(|l| l.path == *rel));
-    if files.is_empty() && linked.is_empty() {
+    if files.is_empty() && linked.is_empty() && (java.is_none() || format == Format::Zip) {
         return Err(format!(
             "{name} has nothing to share yet: no settings, packs, mods or worlds."
         ));
@@ -108,7 +128,7 @@ pub fn export(
         fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     }
     let part = out.with_extension("part");
-    let written = write(&part, name, format, &files, &linked);
+    let written = write(&part, name, format, &files, &linked, java);
     let done = written.and_then(|()| fs::rename(&part, out).map_err(|e| e.to_string()));
     if let Err(e) = done {
         let _ = fs::remove_file(&part);
@@ -128,13 +148,27 @@ fn write(
     format: Format,
     files: &[(String, PathBuf)],
     linked: &[&Linked],
+    java: Option<&crate::instances::JavaGame>,
 ) -> Result<(), String> {
     let mut zip = zip::ZipWriter::new(fs::File::create(path).map_err(|e| e.to_string())?);
     let options = zip::write::SimpleFileOptions::default();
     let prefix = match format {
         Format::Mrpack => {
             zip.start_file(INDEX, options).map_err(|e| e.to_string())?;
-            let index = serde_json::to_vec_pretty(&index(name, linked)).unwrap();
+            let mut manifest = index(name, linked);
+            if let Some(game) = java {
+                let mut deps = serde_json::json!({"minecraft":game.minecraft});
+                if let Some(loader) = &game.loader {
+                    let key = match loader.kind {
+                        crate::loaders::Kind::Fabric => "fabric-loader",
+                        crate::loaders::Kind::Quilt => "quilt-loader",
+                        other => other.id(),
+                    };
+                    deps[key] = serde_json::json!(loader.version);
+                }
+                manifest["dependencies"] = deps;
+            }
+            let index = serde_json::to_vec_pretty(&manifest).unwrap();
             zip.write_all(&index).map_err(|e| e.to_string())?;
             "overrides/"
         }
@@ -231,7 +265,12 @@ pub fn linkable(home: &Path, lookup: &dyn Fn(&Entry) -> Option<FileRef>) -> Vec<
     Installed::load(home)
         .entries
         .iter()
-        .filter(|e| e.source == SourceId::Modrinth && e.kind == Kind::ResourcePack)
+        .filter(|e| {
+            e.source == SourceId::Modrinth
+                && (e.kind == Kind::ResourcePack
+                    || e.file.starts_with("mods/")
+                    || e.file.starts_with("shaderpacks/"))
+        })
         .filter(|e| {
             let Ok(bytes) = fs::read(home.join(&e.file)) else {
                 return false;

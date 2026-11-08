@@ -24,7 +24,7 @@ fn project_type(kind: Kind) -> &'static str {
 fn kind_of(project_type: &str) -> Option<Kind> {
     Kind::ALL
         .into_iter()
-        .filter(|k| !matches!(k, Kind::Shader | Kind::DataPack))
+        .filter(|k| !matches!(k, Kind::DataPack))
         .find(|k| self::project_type(*k) == project_type)
 }
 
@@ -202,7 +202,7 @@ impl Source for Modrinth {
     }
 
     fn search(&self, query: &Query) -> Result<Vec<Project>, String> {
-        if query.kind == Kind::Shader {
+        if query.kind == Kind::Shader && query.filters.game_version.is_none() {
             return Err(super::SHADERS_ON_HORIZON.into());
         }
         let found = get(&search_url(query))?;
@@ -237,6 +237,27 @@ impl Source for Modrinth {
         Ok(all)
     }
 
+    fn versions_for(
+        &self,
+        project: &Project,
+        target: &super::java_instance::Target,
+    ) -> Result<Vec<Version>, String> {
+        let games = serde_json::json!([target.minecraft]).to_string();
+        let url = format!(
+            "{API}/project/{}/version?game_versions={}",
+            encode(&project.id),
+            encode(&games)
+        );
+        let data = get(&url)?;
+        Ok(data
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|v| v["status"].as_str().is_none_or(|s| s == "listed"))
+            .filter_map(parse_version)
+            .collect())
+    }
+
     fn details(&self, project: &Project) -> Result<details::Details, String> {
         let id = encode(&project.id);
         let p = get(&format!("{API}/project/{id}"))?;
@@ -267,7 +288,7 @@ impl Source for Modrinth {
     }
 }
 
-fn get(url: &str) -> Result<Value, String> {
+pub(super) fn get(url: &str) -> Result<Value, String> {
     let response = super::download::agent(url)
         .get(url)
         .call()

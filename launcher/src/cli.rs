@@ -1925,7 +1925,7 @@ fn account_command(action: AccountCmd, as_json: bool) -> Result<(), String> {
                         "name": n,
                         "selected": accounts.player() == account::Player::Offline(n.clone()),
                     })).collect::<Vec<_>>(),
-                    "sign_in_configured": account::client_id().is_some(),
+                    "sign_in_configured": account::sign_in_available(),
                     "owner": accounts.has_owner(account::store()),
                 }));
             } else if accounts.accounts.is_empty() && accounts.offline.is_empty() {
@@ -1976,52 +1976,31 @@ fn account_command(action: AccountCmd, as_json: bool) -> Result<(), String> {
                 (Err(status), false) => return Err(status.message),
             }
         }
-        AccountCmd::SignIn { target: Some(who) } => {
-            let a = find(&accounts, &who)?;
-            let sign_in = account::SignIn::start_for(a.clone());
+        AccountCmd::SignIn { target } => {
+            let sign_in = match target.as_deref() {
+                Some(who) => account::SignIn::start_for(find(&accounts, who)?.clone()),
+                None => account::SignIn::start(),
+            };
             let mut shown = false;
-            let signed_in = loop {
+            loop {
                 match sign_in.state() {
                     account::SignInState::Code(code) if !shown => {
                         shown = true;
                         if as_json {
-                            json(serde_json::json!({
-                                "link": code.verification_uri,
-                                "code": code.user_code,
-                            }));
+                            json(serde_json::json!({ "link": code.verification_uri, "code": code.user_code }));
                         } else {
-                            eprintln!(
-                                "To sign {} in again, open {} in a browser and enter the code {}",
-                                a.name, code.verification_uri, code.user_code
-                            );
+                            eprintln!("To sign in, open {} in a browser and enter the code {}", code.verification_uri, code.user_code);
                         }
                     }
-                    account::SignInState::Done(result) => break result?,
+                    account::SignInState::Done(result) => {
+                        let a = result?;
+                        if as_json { json(serde_json::json!({ "signed_in": a.uuid })); }
+                        else { println!("Signed in as {}.", a.name); }
+                        break;
+                    }
                     _ => {}
                 }
-                std::thread::sleep(std::time::Duration::from_millis(200));
-            };
-            if as_json {
-                json(serde_json::json!({ "signed_in": signed_in.uuid }));
-            } else {
-                println!("Signed in as {} again.", signed_in.name);
-            }
-        }
-        AccountCmd::SignIn { target: None } => {
-            let client_id = account::client_id().ok_or(account::NOT_CONFIGURED)?;
-            let ep = account::Endpoints::live();
-            let code = account::device_code(&ep, &client_id)?;
-            eprintln!(
-                "To sign in, open {} in a browser and enter the code {}",
-                code.verification_uri, code.user_code
-            );
-            let ms = account::wait_for_sign_in(&ep, &client_id, &code, &|| false)?;
-            let (signed_in, secrets) = account::finish_sign_in(&ep, ms)?;
-            accounts.add(account::store(), signed_in.clone(), &secrets)?;
-            accounts.save()?;
-            println!("Signed in as {}.", signed_in.name);
-            if let Some(said) = account::no_keychain() {
-                eprintln!("{said}");
+                std::thread::sleep(std::time::Duration::from_millis(150));
             }
         }
         AccountCmd::SignOut { who } => {
@@ -3271,6 +3250,11 @@ fn instance(action: InstanceCmd, as_json: bool) -> Result<(), String> {
                     } else {
                         println!("Imported the build as {tag}, and selected it.");
                     }
+                }
+                Dropped::World => {
+                    let i=match instance {Some(name)=>instances::find(&name)?,None=>instances::selected()};
+                    let world=horizon_launcher::worlds::import_archive(&i.home,&file)?;
+                    if as_json {json(serde_json::json!({"world":world.folder,"name":world.name}));}else{println!("{}",world.name);}
                 }
                 Dropped::Pack(_) => {
                     let i = match instance {

@@ -39,7 +39,7 @@ impl Target {
             Kind::ResourcePack => Ok("resourcepacks"),
             Kind::Modpack => Err("A modpack is imported as its own instance.".into()),
             Kind::DataPack => Err("A data pack goes in a world.".into()),
-            Kind::Shader => Err("Shader packs for Java instances aren't supported yet.".into()),
+            Kind::Shader => Ok("shaderpacks"),
         }
     }
 
@@ -49,7 +49,7 @@ impl Target {
         query.filters = details::Filters {
             game_version: Some(self.minecraft.clone()),
             loader: match kind {
-                Kind::Mod => self.loader.clone(),
+                Kind::Mod | Kind::Modpack => self.loader.clone(),
                 _ => None,
             },
             ..details::Filters::default()
@@ -73,7 +73,7 @@ impl Target {
     /// Whether this instance takes files of `kind` from the browser as they are: mods and
     /// resource packs.
     pub fn takes(&self, kind: Kind) -> bool {
-        matches!(kind, Kind::Mod | Kind::ResourcePack)
+        matches!(kind, Kind::Mod | Kind::ResourcePack | Kind::Shader)
     }
 
     /// What it plays, as a search with no results names it: `Minecraft 1.21.1 with fabric`.
@@ -90,6 +90,23 @@ impl Target {
         let mut usable = versions.iter().filter(|v| {
             v.blocked.is_none() && v.file().is_some() && v.game_versions.contains(&self.minecraft)
         });
+        if kind == Kind::Shader {
+            return usable.find(|v| {
+                v.loaders
+                    .iter()
+                    .any(|l| matches!(l.as_str(), "iris" | "optifine" | "canvas" | "oculus"))
+            });
+        }
+        if kind == Kind::DataPack {
+            return usable.find(|v| v.loaders.iter().any(|l| l == "datapack"));
+        }
+        if kind == Kind::Modpack {
+            return usable.find(|v| {
+                v.loaders.iter().any(|l| {
+                    self.loader.as_deref() == Some(l) || (self.loader.is_none() && l == "minecraft")
+                })
+            });
+        }
         if kind != Kind::Mod {
             return usable.find(|v| v.loaders.iter().any(|l| l == "minecraft"));
         }
@@ -124,7 +141,7 @@ fn add(
         return Err(format!("{}'s dependencies go too deep.", project.title));
     }
     target.folder(project.kind)?;
-    let versions = source.versions(&project)?;
+    let versions = source.versions_for(&project, target)?;
     let Some(version) = target.pick(project.kind, &versions).cloned() else {
         return Err(match versions.iter().find_map(|v| v.blocked.clone()) {
             Some(why) => format!("{} can't be installed from here: {why}", project.title),
