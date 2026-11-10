@@ -10,6 +10,8 @@
 
 ![مقارنة صفحة اللعب في Horizon الأصلي وBODKA على ويندوز](docs/media/beta03/comparison.webp)
 
+[شاهد الإعلان بالعربي · ٣٦ ثانية](https://github.com/aboodksa4011/Horizon-Bodka-Ultra-Beta/releases/download/v0.2.0-beta.3/BODKA-Beta03-Trailer-AR.mp4) · [شاهد شرح الواجهات وطريقة التحميل · ٢:٢٧](https://github.com/aboodksa4011/Horizon-Bodka-Ultra-Beta/releases/download/v0.2.0-beta.3/BODKA-Beta03-Guide-AR.mp4)
+
 ## كيف تلعب؟
 
 | اختيارك | الخطوات داخل BODKA | الحساب |

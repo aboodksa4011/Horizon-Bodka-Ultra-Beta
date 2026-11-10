@@ -4,6 +4,8 @@
 
 ![مقارنة Horizon وBODKA](media/beta03/comparison.webp)
 
+[تنزيل الصور الأصلية كاملة في حزمة واحدة](https://github.com/aboodksa4011/Horizon-Bodka-Ultra-Beta/releases/download/v0.2.0-beta.3/BODKA-Beta03-Interface-Gallery.zip)
+
 ## من أول دخول إلى اللعب
 
 <details><summary>دليل اختيار طريقة اللعب ومتطلبات الجهاز</summary>

@@ -2,7 +2,7 @@
 
 يدعم الإصدار أجهزة Intel وAMD التي تعمل بويندوز 10 أو 11 بمعمارية x64.
 
-1. افتح GitHub وابحث عن `Horizon-Bodka-Ultra-Beta`. اختر مستودع `aboodksa4011`.
+1. افتح GitHub وابحث عن `Horizon-Bodka-Ultra-Beta fork:true` ليعرض GitHub المستودعات المتفرّعة. اختر مستودع `aboodksa4011`.
 2. انزل إلى وصف المشروع واضغط **تفاصيل الإصدار**. داخل **Assets** نزّل `Horizon-Bodka-Ultra-Java-Beta-Windows-x64.zip`. [صفحة Beta 03](https://github.com/aboodksa4011/Horizon-Bodka-Ultra-Beta/releases/tag/v0.2.0-beta.3)
 3. فكّ ضغط الحزمة بالكامل، ثم افتح `HorizonBodkaUltra.exe`. اترك مجلد `Horizon` بجانبه لاستخدام مساعد ربط Microsoft المرفق.
 
