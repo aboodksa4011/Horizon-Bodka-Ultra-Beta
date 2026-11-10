@@ -70,6 +70,11 @@ impl Launcher {
             .pt(px(64. - crate::glass::CONTENT_INSET))
             .child(self.edition_tabs(java.is_some(), cx))
             .child(self.home_title(cx))
+            .children(java.as_ref().map(|game| {
+                ui::text(16., FontWeight::MEDIUM, ink::BODY)
+                    .when(i18n::is_rtl(), |d| d.text_right())
+                    .child(trf("Minecraft Java {version}", &[("version", &game.minecraft)]))
+            }))
             .child(self.played_text(cx))
             .child(actions)
     }

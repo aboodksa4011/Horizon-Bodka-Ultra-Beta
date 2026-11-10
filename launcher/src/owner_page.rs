@@ -33,11 +33,19 @@ impl Launcher {
     fn close_owner_screen(&mut self) {
         self.cancel_sign_in();
         self.library.cancel_login_action();
+        self.signup_from_guide = false;
         self.owner_screen_open = false;
         if !self.settings.owner_notice_seen {
             self.settings.owner_notice_seen = true;
             self.save_settings();
         }
+    }
+
+    fn owner_title(&self) -> String {
+        self.pending_java_version().map_or_else(
+            || tr("Sign in to play").to_string(),
+            |version| trf("Minecraft Java {version}", &[("version", version)]),
+        )
     }
 
     pub(crate) fn owner_screen(&mut self, cx: &mut Context<Self>) -> Stateful<Div> {
@@ -57,6 +65,7 @@ impl Launcher {
         if crate::glass_ui::on() {
             return self.glass_owner_screen(state, configured, cx);
         }
+        let rtl = i18n::is_rtl();
         let line = |s: &str, color: u32| {
             shell::text(theme::night::UI, shell::c(color))
                 .relative()
@@ -67,6 +76,7 @@ impl Launcher {
             .flex()
             .flex_col()
             .gap(px(10.))
+            .when(rtl, |d| d.text_right())
             .child(
                 shell::text(theme::night::CAPTION, shell::c(n.muted))
                     .font_weight(FontWeight::SEMIBOLD)
@@ -75,20 +85,9 @@ impl Launcher {
             .child(
                 shell::text(theme::night::TITLE, shell::c(n.ink))
                     .mb(px(4.))
-                    .child(tr("Sign in to play").to_string()),
+                    .child(self.owner_title()),
             )
-            .child(line(
-                "Horizon needs a Microsoft account that owns Minecraft: Java Edition, like other launchers.",
-                n.ink_soft,
-            ))
-            .child(line(
-                "No Minecraft install needed: Horizon downloads it from Mojang for your account.",
-                n.ink_soft,
-            ))
-            .child(line(
-                "Your worlds, offline names and settings stay where they are.",
-                n.muted,
-            ));
+            .child(line("Sign in with the Microsoft account that owns the game.", n.ink_soft));
         let raised = || {
             div()
                 .relative()
@@ -185,6 +184,8 @@ impl Launcher {
             .flex()
             .items_center()
             .gap(px(10.))
+            .flex_wrap()
+            .when(rtl, |d| d.flex_row_reverse())
             .mt(px(14.))
             .children(main)
             .child(
@@ -250,6 +251,7 @@ impl Launcher {
                 .rounded(px(radius::POPOVER))
                 .bg(white(0.045))
         };
+        let rtl = i18n::is_rtl();
         let mut card = ui::dialog_plate(radius::MODAL)
             .id("owner-card")
             .occlude()
@@ -259,6 +261,7 @@ impl Launcher {
             .w(px(520.))
             .max_w_full()
             .p(px(32.))
+            .when(rtl, |d| d.text_right())
             .child(ui::text(13., FontWeight::MEDIUM, ink::QUIET).child(tr("Microsoft account")))
             .child(
                 div()
@@ -268,27 +271,11 @@ impl Launcher {
                     .text_size(px(28.))
                     .line_height(px(35.))
                     .text_color(white(ink::FULL))
-                    .child(tr("Sign in to play")),
+                    .child(self.owner_title()),
             )
-            .child(
-                div()
-                    .mt(px(12.))
-                    .flex()
-                    .flex_col()
-                    .gap(px(8.))
-                    .when(account::client_id().is_none() && account::sign_in_available(), |d| {
-                        d.child(ui::text(14., FontWeight::NORMAL, ink::BODY).child(tr("Official Horizon handles this optional Microsoft link for BODKA.")))
-                    })
-                    .child(ui::text(14., FontWeight::NORMAL, ink::BODY).child(tr(
-                        "Horizon needs a Microsoft account that owns Minecraft: Java Edition, like other launchers.",
-                    )))
-                    .child(ui::text(14., FontWeight::NORMAL, ink::BODY).child(tr(
-                        "No Minecraft install needed: Horizon downloads it from Mojang for your account.",
-                    )))
-                    .child(ui::text(14., FontWeight::NORMAL, ink::QUIET).child(tr(
-                        "Your worlds, offline names and settings stay where they are.",
-                    ))),
-            );
+            .child(ui::text(14., FontWeight::NORMAL, ink::BODY)
+                .mt(px(12.))
+                .child(tr("Sign in with the Microsoft account that owns the game.")));
         card = match state {
             Shown::Code(uri, user_code) => {
                 let copy = user_code.to_string();
@@ -384,7 +371,6 @@ impl Launcher {
                 .into_any_element(),
             ),
         };
-        let guest = crate::classic_game::button("gate-classic", &t, cx);
         let later = ui::button("owner-later".into(), tr("Not now").into(), Kind::Ghost, &t)
             .h(px(44.))
             .px(px(20.))
@@ -398,8 +384,10 @@ impl Launcher {
                 .items_center()
                 .gap(px(8.))
                 .mt(px(24.))
+                .flex_wrap()
+                .when(rtl, |d| d.flex_row_reverse())
                 .children(main)
-                .child(guest).child(later),
+                .child(later),
         );
         if matches!(state, Shown::Code(..)) {
             card = card.child(

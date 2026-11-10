@@ -102,7 +102,16 @@ impl Launcher {
                 line(tr("Asking Mojang for its versions…").into(), ink::QUIET),
             ),
             VersionList::Failed(e) => list_box("mc-versions", 264.)
-                .child(line(e.clone(), ink::FULL).text_color(ui::danger())),
+                .child(line(e.clone(), ink::FULL).text_color(ui::danger()))
+                .child(
+                    button("retry-java-versions", "Retry", Kind::Secondary, &t).on_click(
+                        cx.listener(|this, _: &ClickEvent, _, cx| {
+                            this.instances.versions = VersionList::NotAsked;
+                            this.load_versions(cx);
+                            cx.notify();
+                        }),
+                    ),
+                ),
             VersionList::Ready(versions) => {
                 let rows: Vec<_> = versions
                     .of(choice.snapshots, choice.old)

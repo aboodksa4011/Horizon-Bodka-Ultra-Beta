@@ -1,25 +1,25 @@
-# تشغيل BODKA Beta 02 على ويندوز
+# تشغيل BODKA Beta 03 على ويندوز
 
-الإصدار `v0.2.0-beta.2` مخصّص لويندوز 10 و11 على أجهزة Intel وAMD بمعمارية x64. [تحميل الحزمة الكاملة (50.5 MiB)](https://github.com/aboodksa4011/Horizon-Bodka-Ultra-Beta/releases/download/v0.2.0-beta.2/Horizon-Bodka-Ultra-Beta-Frosted-Windows-x64.zip) · [صفحة الإصدار](https://github.com/aboodksa4011/Horizon-Bodka-Ultra-Beta/releases/tag/v0.2.0-beta.2)
+يدعم الإصدار أجهزة Intel وAMD التي تعمل بويندوز 10 أو 11 بمعمارية x64.
 
-## التثبيت أو تحديث Beta 01
+1. افتح GitHub وابحث عن `Horizon-Bodka-Ultra-Beta`. اختر مستودع `aboodksa4011`.
+2. انزل إلى وصف المشروع واضغط **تفاصيل الإصدار**. داخل **Assets** نزّل `Horizon-Bodka-Ultra-Java-Beta-Windows-x64.zip`. [صفحة Beta 03](https://github.com/aboodksa4011/Horizon-Bodka-Ultra-Beta/releases/tag/v0.2.0-beta.3)
+3. فكّ ضغط الحزمة بالكامل، ثم افتح `HorizonBodkaUltra.exe`. اترك مجلد `Horizon` بجانبه لاستخدام مساعد ربط Microsoft المرفق.
 
-1. نزّل حزمة ZIP. من مستكشف الملفات، اضغط بزر الفأرة الأيمن واختر **استخراج الكل** إلى مجلد تختاره.
-2. إذا كنت تستخدم نسخة سابقة، أغلق نافذتها ثم افتح `HorizonBodkaUltra.exe` من المجلد الجديد. يخزّن BODKA المكتبات والإعدادات في مجلد بياناته، ويمكن استخدام المجلد المعتاد بعد التحديث.
-3. اترك مجلد `Horizon` بجوار التطبيق لاستخدام مساعد ربط Microsoft المرفق. يمكن أيضًا تنزيل ملف EXE منفردًا. عند طلب الربط، يجلب المشغّل المساعد الرسمي ويتحقق من بصمته. [ملف EXE المنفرد](https://github.com/aboodksa4011/Horizon-Bodka-Ultra-Beta/releases/download/v0.2.0-beta.2/HorizonBodkaUltra.exe)
+## اختر طريقة اللعب
 
-## اختيار طريقة اللعب
+**الرسمية.** اختر **عندي ماينكرافت الأصلية** وسجّل الدخول بحساب Microsoft الذي يملك Java Edition. اختر الإصدار، وتابع التنزيل، ثم اضغط **العب** في مكتبته.
 
-- **مكتبة جديدة** — اختر **إنشاء مكتبة** ثم الإصدار والمحمّل. بعد اكتمال التجهيز، افتح **تعديل** لإدارة المودات والعوالم.
-- **تثبيت موجود على الجهاز** — افتح **مشغّل BODKA المزدوج**. اختر إصدارك المكتشف أو حدّد مجلد اللعبة الذي يحتوي على `versions`. اختر **استيراد النسخة** لإنشاء نسخة مُدارة.
-- **اللعب كضيف** — يفتح **لعب ماينكرافت كلاسيك كضيف** نسخة Minecraft Classic الرسمية داخل نافذة تستخدم WebView2 وتتطلب اتصالًا بالإنترنت. يحتاج تشغيل Minecraft Java الحديثة إلى حساب يملك اللعبة. اختر **ربط Microsoft عبر هورايزن** واتبع الخطوات في صفحة Microsoft.
+**عبر TLauncher.** اختر **عندي نسخة محلية أو مكركة** ثم **فحص TLauncher**. إذا كان مثبتًا، اضغط **فتح TLauncher** وأكمل اللعب منه. لا يلزم حساب Microsoft أو نسخة Minecraft الرسمية لفتح هذا المشغّل من BODKA. إذا لم يُكتشف التطبيق، افتح موقعه من صفحة الفحص ثم أعد المحاولة. يمكن اختيار مجلد `versions` من خلال تحديد مجلد اللعبة الأب لاستيراد الملفات المحلية.
 
-## التحقق من ملف التنزيل
+**المكتبات المستوردة.** زر **فتح TLauncher** يفتح التطبيق الخارجي. زر **العب** على مكتبة Minecraft Java داخل BODKA يستخدم حسابًا مالكًا للعبة. تتوفر إدارة المكتبات والإعدادات في وضع الضيف.
 
-شغّل الأمر التالي في PowerShell من مجلد التنزيل، وقارن قيمة `Hash` ببصمة الملف المنشورة مع الإصدار. بناء Beta غير موقّع بشهادة ناشر Windows. [ملف البصمات SHA256SUMS.txt](https://github.com/aboodksa4011/Horizon-Bodka-Ultra-Beta/releases/download/v0.2.0-beta.2/SHA256SUMS.txt)
+## بصمة الحزمة
+
+نفّذ الأمر التالي من مجلد التنزيل وقارن قيمة SHA-256 بالملف المنشور مع الإصدار. [تنزيل البصمات](https://github.com/aboodksa4011/Horizon-Bodka-Ultra-Beta/releases/download/v0.2.0-beta.3/SHA256SUMS.txt)
 
 ```powershell
-Get-FileHash -Algorithm SHA256 .\Horizon-Bodka-Ultra-Beta-Frosted-Windows-x64.zip
+Get-FileHash -Algorithm SHA256 .\Horizon-Bodka-Ultra-Java-Beta-Windows-x64.zip
 ```
 
-[صور التحديث](../README.md) · [تقرير الاختبارات](../BODKA-11-IMPLEMENTATION-REPORT.md)
+[معرض الواجهات والقوائم](BODKA-GALLERY.md) · [الحزمة المباشرة لويندوز](https://github.com/aboodksa4011/Horizon-Bodka-Ultra-Beta/releases/download/v0.2.0-beta.3/Horizon-Bodka-Ultra-Java-Beta-Windows-x64.zip)

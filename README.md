@@ -1,39 +1,35 @@
-<p align="center"><img src="docs/media/bodka-beta/cover.svg" alt="Horizon Bodka Ultra · Beta 02 لويندوز x64" width="100%"></p>
-
 # 𝓗𝓸𝓻𝓲𝔃𝓸𝓷 𝓑𝓸𝓭𝓴𝓪 𝓤𝓵𝓽𝓻𝓪
 
-مشغّل عربي لماينكرافت على ويندوز. أنشئ مكتبة لكل إصدار تلعبه، واختر محمّل المودات، ثم أضف المودات المتوافقة من داخل المكتبة. ويمكنك استيراد تثبيت محلي من المشغّل الرسمي أو TLauncher عبر **مشغّل BODKA المزدوج**.
+**Beta 03 · Minecraft Java Edition · Windows x64**
 
-<p align="center"><a href="https://github.com/aboodksa4011/Horizon-Bodka-Ultra-Beta/releases/download/v0.2.0-beta.2/Horizon-Bodka-Ultra-Beta-Frosted-Windows-x64.zip"><img src="docs/media/bodka-beta/download.svg" alt="تحميل الحزمة الكاملة لويندوز x64" width="288"></a></p>
-<p align="center"><strong>Beta 02</strong> · Windows 10 / 11 · x64 · ZIP · 50.5 MiB</p>
-<p align="center"><a href="https://github.com/aboodksa4011/Horizon-Bodka-Ultra-Beta/releases/tag/v0.2.0-beta.2">تفاصيل الإصدار</a> · <a href="docs/BODKA-RELEASE.md">دليل التشغيل والتحديث</a> · <a href="https://github.com/aboodksa4011/Horizon-Bodka-Ultra-Beta/releases/download/v0.2.0-beta.2/SHA256SUMS.txt">بصمات الملفات</a></p>
+مشغّل ماينكرافت بالعربية. خصّص مكتبة لكل إصدار ومحمّل، ثم أضف المودات المتوافقة وشغّل اللعبة من بطاقتها.
 
-## داخل Beta 02
+[![تحميل حزمة ويندوز x64](docs/media/bodka-beta/download.svg)](https://github.com/aboodksa4011/Horizon-Bodka-Ultra-Beta/releases/download/v0.2.0-beta.3/Horizon-Bodka-Ultra-Java-Beta-Windows-x64.zip)
 
-تظهر ألوان خلفية الغروب من خلال قائمة المودات وبطاقة التفاصيل. يتبع التمويه حركة الخلفية، وتبقى الكتابة والأيقونات حادّة. عند فتح مود أو الرجوع إلى المكتبة، تتلاشى الصفحة في مكانها وتبقى الأزرار ثابتة تحت المؤشر.
+[تفاصيل الإصدار](https://github.com/aboodksa4011/Horizon-Bodka-Ultra-Beta/releases/tag/v0.2.0-beta.3) · [دليل ويندوز](docs/BODKA-RELEASE.md) · [معرض الواجهات والقوائم](docs/BODKA-GALLERY.md)
 
-![كتالوج Essential داخل مكتبة Forge، مع نتائج البحث وبطاقة المود فوق خلفية BODKA الزجاجية](docs/media/bodka-beta/frosted-catalogue.png)
+![مقارنة صفحة اللعب في Horizon الأصلي وBODKA على ويندوز](docs/media/beta03/comparison.webp)
 
-<details>
-<summary>شاهد قائمة الفرز مفتوحة داخل التطبيق</summary>
+## كيف تلعب؟
 
-![قائمة ترتيب النتائج مفتوحة فوق الكتالوج، وتظهر خلفها ألوان الخلفية المموّهة](docs/media/bodka-beta/frosted-menu.png)
+| اختيارك | الخطوات داخل BODKA | الحساب |
+| --- | --- | --- |
+| Minecraft Java الرسمية | اختر **عندي ماينكرافت الأصلية** واربط حسابك. حدّد الإصدار من قائمة Mojang واضغط **العب** من مكتبته. | حساب Microsoft يملك Minecraft Java Edition. |
+| نسخة محلية أو مكركة عبر TLauncher | اختر **عندي نسخة محلية أو مكركة** ثم **فحص TLauncher**. بعد اكتشاف التطبيق اضغط **فتح TLauncher** وأكمل اللعب فيه. | فتح TLauncher من BODKA متاح دون حساب Microsoft ودون امتلاك النسخة الرسمية. |
+| تصفّح كضيف | افتح المكتبة، تصفّح المحتوى وعدّل إعدادات الواجهة. | متاح مباشرة. |
 
-</details>
+إذا لم يظهر TLauncher، تتيح صفحة الفحص فتح موقعه وإعادة الفحص بعد تثبيته. لاستيراد إصدار محلي، حدّد مجلد اللعبة الذي يحتوي على `versions`. زر تشغيل النسخة المستوردة **داخل BODKA** يستخدم مسار Java الرسمي.
 
-## من أول تشغيل إلى أول مود
+## داخل Beta 03
 
-1. حمّل حزمة ويندوز أعلاه، وفكّ ضغطها بالكامل، ثم افتح `HorizonBodkaUltra.exe`. عند أول تشغيل اضغط **موافق** بعد انتهاء الافتتاحية.
-2. اختر **إنشاء مكتبة**، وسمّها وحدّد إصدار اللعبة والمحمّل. تقدر مثلًا تخصص مكتبة لـ Fabric وأخرى لـ Forge، وتتابع التجهيز من بطاقة كل مكتبة.
-3. افتح **تعديل ← التعديلات** في بطاقة المكتبة. ابحث عن المود واضغط **تثبيت**، أو الصق ملف مود محليًا. تقدر تواصل التصفح أثناء التنزيل.
-4. من صفحة المكتبة تقدر تفعّل المودات أو تعطّلها، وتستورد عالمًا من ملف ZIP، أو تنسخ رمز المكتبة لصديق يستعيد إصدارات المودات المنشورة من مصادرها.
+- **Java بإصدار محدّد.** يظهر رقم الإصدار في صفحة اللعب ونافذة الربط. يحتفظ طلب التشغيل بالمكتبة والعالم أو الخادم المحدد أثناء تسجيل الدخول. أُزيل خيار لعبة المتصفح Minecraft Classic.
+- **مكتبات ومودات.** اختر Vanilla أو Fabric أو Forge أو NeoForge أو Quilt، أو أنشئ مكتبة مستقلة لمحرك Horizon Rust. يدعم الكتالوج البحث حسب الإصدار والمحمّل، وإضافة ملفات محلية، وتعطيل مود ونسخ رمز المكتبة للمشاركة.
+- **عوالم وتنزيلات وأدوات.** اعرض حالة التجهيز، وأدر العوالم والخوادم، وافتح التشخيص وقياسات واجهة المشغّل. يمكن تعديل الثيم والخلفية والحركة والصوت من الإعدادات.
 
-يدخل المستخدم كضيف لتصفح المكتبات وإدارتها. لتجربة اللعبة كضيف اختر **لعب ماينكرافت كلاسيك كضيف**. لتشغيل إصدار Java الحديث، اختر **ربط Microsoft عبر هورايزن** وسجّل بحساب يملك اللعبة. تتضمن حزمة ZIP مساعد Horizon المستخدم في الربط.
+![كتالوج المودات المتوافقة في مكتبة Forge](docs/media/beta03/11-mods.webp)
 
-## التوافق والاختبارات
+## التثبيت والتحقق
 
-يتحدد كتالوج المكتبة حسب إصدار Minecraft والمحمّل المختارين. يدعم مسار Java مكتبات Fabric وForge وNeoForge وQuilt، ولمحرك Horizon Rust إصداراته وحزمه الخاصة. نجح 754 اختبارًا آليًا للمشغّل، واختُبرت على ويندوز أيضًا شاشة الكتالوج وقائمة الفرز والرجوع وتمرير الإعدادات. [تقرير الاختبارات وحدود التوافق](BODKA-11-IMPLEMENTATION-REPORT.md)
+فك ضغط الحزمة كاملة، وافتح `HorizonBodkaUltra.exe` وأبقِ مجلد `Horizon` بجانبه. نجح 758 اختبارًا آليًا للمشغّل. جرى اختبار استيراد إصدار Java 26.3 محليًا والتحقق من ملفه بمطابقة بصمة Mojang. [بصمات التنزيل](https://github.com/aboodksa4011/Horizon-Bodka-Ultra-Beta/releases/download/v0.2.0-beta.3/SHA256SUMS.txt) · [تقرير التنفيذ والاختبارات](BODKA-11-IMPLEMENTATION-REPORT.md)
 
-## المصدر والترخيص
-
-تحتفظ هذه النسخة بتاريخ مساهمات Horizon. [مشروع Horizon](https://github.com/horizon-rust/horizon) · [دليل Horizon الأصلي](README-Horizon.md) · [الرخصة](LICENSE) · [إشعارات الطرف الثالث](THIRD_PARTY_NOTICES.md)
+[مشروع Horizon الأصلي](https://github.com/horizon-rust/horizon) · [دليل Horizon](README-Horizon.md) · [الترخيص](LICENSE) · [إشعارات الطرف الثالث](THIRD_PARTY_NOTICES.md)

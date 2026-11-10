@@ -4,11 +4,17 @@ use crate::glass_ui as ui;
 use horizon_launcher::browser::{shared_library::Profile, Kind as Content};
 use instances::{Instance, Kind as InstanceKind};
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum JavaAction {
+    Download,
+    Play,
+    World(String),
+    Server(String),
+}
+
 #[derive(Default)]
 pub(super) struct Workspace {
     history: Vec<Page>,
-    #[cfg(windows)]
-    pub classic: Option<gpui::WindowHandle<crate::classic_game::GuestWindow>>,
     statuses: HashMap<String, Result<String, String>>,
     readiness: HashMap<String, (String, Instant, bool)>,
     horizon_queue: VecDeque<(String, String)>,
@@ -22,7 +28,8 @@ pub(super) struct Workspace {
     queued_join: Option<(String, String)>,
     game_session: Option<(String, Option<String>)>,
     missing_mods: bool,
-    pending_auth: Option<String>,
+    pending_auth: Option<(String, JavaAction)>,
+    requested_play: Option<(String, JavaAction)>,
 }
 impl Workspace {
     pub fn visit(&mut self, old: Page, new: Page) {
@@ -59,8 +66,19 @@ impl Workspace {
         self.pending_auth = None;
         self.queued_join = None;
     }
-    pub fn signed_in(&mut self) -> Option<String> {
-        self.pending_auth.take()
+    pub fn pending_action(&self) -> Option<&(String, JavaAction)> {
+        self.pending_auth.as_ref()
+    }
+
+    pub fn needs_link(&mut self, id: String, action: JavaAction) {
+        self.pending_auth = Some((id, action));
+    }
+    pub fn take_requested_play(&mut self, id: &str) -> Option<JavaAction> {
+        if self.requested_play.as_ref()?.0 == id {
+            self.requested_play.take().map(|(_, action)| action)
+        } else {
+            None
+        }
     }
     pub fn busy(&self) -> bool {
         self.sharing || self.statuses.values().any(Result::is_ok) || !self.horizon_queue.is_empty()
@@ -142,22 +160,58 @@ impl Launcher {
             }
         }
     }
+    pub(super) fn pending_java_version(&self) -> Option<&str> {
+        let (id, _) = self.library.pending_action()?;
+        self.instances.list.iter().find(|i| &i.id == id)?.java.as_ref()
+            .map(|game| game.minecraft.as_str())
+    }
+
+    pub(super) fn request_java_action(&mut self, instance: &Instance, action: JavaAction) {
+        self.library.pending_auth = Some((instance.id.clone(), action));
+        if self.owner != Some(true) {
+            self.owner_screen_open = true;
+        }
+        self.resume_java_action();
+    }
+
+    fn resume_java_action(&mut self) {
+        if self.owner != Some(true)
+            || self.client.is_some()
+            || self.starting_client.is_some()
+            || self.preparing
+        {
+            return;
+        }
+        let Some((id, action)) = self.library.pending_auth.take() else {
+            return;
+        };
+        let Some(instance) = self.instances.list.iter().find(|i| i.id == id).cloned() else {
+            return;
+        };
+        self.owner_screen_open = false;
+        match action {
+            JavaAction::Download => self.prepare_java_library(instance),
+            play => {
+                self.select_instance(&instance);
+                self.go(Page::Play);
+                self.library.requested_play = Some((id, play.clone()));
+                match play {
+                    JavaAction::World(folder) => self.start_java_at(instance, None, Some(folder)),
+                    JavaAction::Server(address) => self.start_java_at(instance, Some(address), None),
+                    _ => self.start_java_at(instance, None, None),
+                }
+            }
+        }
+    }
+
     pub(super) fn next_library_preparation(&mut self) {
+        self.resume_java_action();
         if self.preparing || self.client.is_some() || self.starting_client.is_some() {
             return;
         }
         if let Some((id, address)) = self.library.queued_join.take() {
-            if self.owner == Some(true) {
-                if let Some(i) = self.instances.list.iter().find(|i| i.id == id).cloned() {
-                    self.select_instance(&i);
-                    self.go(Page::Play);
-                    self.start_java(i, Some(address));
-                }
-            } else if self.owner == Some(false) {
-                self.owner_screen_open = true;
-                self.library.queued_join = Some((id, address));
-            } else {
-                self.library.queued_join = Some((id, address));
+            if let Some(i) = self.instances.list.iter().find(|i| i.id == id).cloned() {
+                self.request_java_action(&i, JavaAction::Server(address));
             }
             return;
         }
@@ -240,11 +294,27 @@ impl Launcher {
 
     pub(super) fn library_home(&mut self, cx: &mut Context<Self>) -> Div {
         let t = self.theme;
-        let create = button("library-create", "Create library", Kind::Primary, &t).on_click(
+        let direct = button("library-direct", "Download Minecraft", Kind::Primary, &t).on_click(
+            cx.listener(|this, _: &ClickEvent, _, cx| {
+                this.open_direct_install(cx);
+                cx.notify();
+            }),
+        );
+        let import = button(
+            "library-local",
+            "Use an installed launcher",
+            Kind::Secondary,
+            &t,
+        )
+        .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+            this.go(Page::Dual);
+            cx.notify();
+        }));
+        let create = button("library-create", "Create library", Kind::Ghost, &t).on_click(
             cx.listener(|this, _: &ClickEvent, _, cx| {
                 this.library.review = None;
                 this.library.share_note = None;
-                this.open_instance_dialog(None);
+                this.open_java_library(cx);
                 cx.notify();
             }),
         );
@@ -280,6 +350,10 @@ impl Launcher {
                         .border_color(t.accent.opacity(0.24))
                         .child(ui::icon("archive", 38., t.accent))
                         .child(title(tr("You have no libraries yet"), 25.))
+                        .child(ui::text(14., FontWeight::NORMAL, 0.84).child(tr(
+                            "Download from Mojang or bring a version you already play.",
+                        )))
+                        .child(line().justify_center().child(direct).child(import))
                         .child(create),
                 );
         }
@@ -296,7 +370,7 @@ impl Launcher {
                 line()
                     .justify_between()
                     .child(title(tr("My libraries"), 30.))
-                    .child(create),
+                    .child(line().child(direct).child(import).child(create)),
             )
             .child(cards)
     }
@@ -358,16 +432,18 @@ impl Launcher {
                     this.play_pack(play.work.clone());
                 } else if pack {
                     this.open_library(&play, cx);
-                } else if java && this.owner == Some(false) {
-                    if !ready {
-                        this.library.pending_auth = Some(play.id.clone());
-                    }
-                    this.owner_screen_open = true;
+                } else if java {
+                    this.request_java_action(
+                        &play,
+                        if ready {
+                            JavaAction::Play
+                        } else {
+                            JavaAction::Download
+                        },
+                    );
                 } else if ready {
                     this.go(Page::Play);
                     this.play();
-                } else if java {
-                    this.prepare_java_library(play.clone());
                 } else {
                     this.install_error = None;
                     this.prepare_new_library(&play, cx);
@@ -626,7 +702,6 @@ impl Launcher {
                     ),
                 )
                 .child(self.library_paste_button(cx))
-                .child(crate::classic_game::button("library-classic", &t, cx))
                 .when(self.owner != Some(true), |d| {
                     d.child(
                         ui::quiet(

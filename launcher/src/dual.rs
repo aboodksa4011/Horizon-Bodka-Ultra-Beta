@@ -151,13 +151,21 @@ fn target(id: &str, meta: &Value) -> (String, Option<loaders::Loader>, bool) {
     let parent = meta["inheritsFrom"]
         .as_str()
         .or_else(|| meta["jar"].as_str().filter(|v| *v != id))
+        .or_else(|| meta["clientVersion"].as_str().filter(|v| *v != id))
         .or_else(|| {
             meta.pointer("/modpackVersion/gameVersion/name")
                 .and_then(Value::as_str)
+        })
+        .or_else(|| {
+            meta["libraries"].as_array()?.iter().find_map(|lib| {
+                let coordinate = lib["name"]
+                    .as_str()?
+                    .strip_prefix("net.minecraftforge:forge:")?;
+                let (base, _) = coordinate.split_once('-')?;
+                (base.starts_with(|c: char| c.is_ascii_digit()) && safe_id(base)).then_some(base)
+            })
         });
-    let Some(parent) = parent else {
-        return (id.into(), None, true);
-    };
+    let parent = parent.unwrap_or(id);
     let candidate = meta["libraries"]
         .as_array()
         .into_iter()
@@ -206,13 +214,17 @@ fn target(id: &str, meta: &Value) -> (String, Option<loaders::Loader>, bool) {
             })
         })
         .filter(|l| safe_id(&l.version));
-    let supported = candidate.is_some() && safe_id(parent);
+    let supported = safe_id(parent) && (candidate.is_some() || parent == id);
     (parent.to_owned(), candidate, supported)
 }
 
 /// A root may be shared by both launchers. A modpack's isolated game folder takes
 /// precedence over the shared mods directory. No third-party launch arguments are imported.
 pub fn inspect(root: &Path) -> Vec<Entry> {
+    inspect_as(root, Source::Auto)
+}
+
+fn inspect_as(root: &Path, source: Source) -> Vec<Entry> {
     let versions = root.join("versions");
     if !directory(root) || !directory(&versions) {
         return Vec::new();
@@ -222,7 +234,8 @@ pub fn inspect(root: &Path) -> Vec<Entry> {
         .unwrap_or_default()
         .to_string_lossy()
         .to_lowercase();
-    let tl = name.contains("tlauncher")
+    let tl = source == Source::Tlauncher
+        || name.contains("tlauncher")
         || root
             .ancestors()
             .take(3)
@@ -244,7 +257,7 @@ pub fn inspect(root: &Path) -> Vec<Entry> {
     .map(|n| root.join(n));
     let name_of_root_is_official = name == ".minecraft";
     let has_profiles = profile.iter().any(|p| regular(p));
-    let known = tl || name == ".minecraft" || has_profiles;
+    let known = tl || source == Source::Official || name == ".minecraft" || has_profiles;
     let mut profiles = Vec::new();
     for p in profile.iter().filter_map(|p| small_json(p)) {
         for value in p["profiles"]
@@ -283,7 +296,10 @@ pub fn inspect(root: &Path) -> Vec<Entry> {
         }
         let metadata = small_json(&path.join(format!("{id}.json")));
         let version = metadata.as_ref().unwrap_or(&Value::Null);
-        if version["id"].as_str().is_some_and(|v| v != id)
+        let is_tl =
+            tl || !version["modpackVersion"].is_null() || !version["tlauncherVersion"].is_null();
+        let manifest_id = version["id"].as_str().unwrap_or(&id);
+        if (manifest_id != id && (!is_tl || !safe_id(manifest_id)))
             || (metadata.is_none()
                 && !(known
                     && (regular(&path.join(format!("{id}.jar")))
@@ -295,9 +311,7 @@ pub fn inspect(root: &Path) -> Vec<Entry> {
         {
             continue;
         }
-        let (minecraft, loader, supported) = target(&id, version);
-        let is_tl =
-            tl || !version["modpackVersion"].is_null() || !version["tlauncherVersion"].is_null();
+        let (minecraft, loader, supported) = target(manifest_id, version);
         let game = if is_tl && (directory(&path.join("mods")) || directory(&path.join("saves"))) {
             &path
         } else {
@@ -318,7 +332,9 @@ pub fn inspect(root: &Path) -> Vec<Entry> {
                 minecraft: minecraft.clone(),
                 loader: loader.clone(),
                 supported,
-                official: has_profiles || (name_of_root_is_official && !is_tl),
+                official: source == Source::Official
+                    || has_profiles
+                    || (name_of_root_is_official && !is_tl),
                 tlauncher: is_tl,
                 mods: if game == root {
                     shared_mods.clone()
@@ -346,7 +362,8 @@ fn volumes() -> Vec<PathBuf> {
         .filter_map(|i| {
             let root = format!("{}:\\", char::from(b'A' + i));
             let wide = root.encode_utf16().chain(Some(0)).collect::<Vec<_>>();
-            matches!(unsafe { GetDriveTypeW(wide.as_ptr()) }, 2 | 3 | 6).then(|| PathBuf::from(root))
+            matches!(unsafe { GetDriveTypeW(wide.as_ptr()) }, 2 | 3 | 6)
+                .then(|| PathBuf::from(root))
         })
         .collect()
 }
@@ -379,8 +396,12 @@ fn ignore(name: &str) -> bool {
     )
 }
 
+mod installed;
+pub use installed::InstalledLauncher;
+
 #[derive(Default, Debug)]
 pub struct Summary {
+    pub installed: Vec<InstalledLauncher>,
     pub volumes: usize,
     pub skipped: usize,
 }
@@ -389,30 +410,30 @@ pub struct Summary {
 /// discoveries immediately. Read directory names once and only open game metadata at candidates.
 fn walk(
     roots: Vec<PathBuf>,
-    quick: Vec<PathBuf>,
+    quick: Vec<(PathBuf, Source)>,
     excluded: &[PathBuf],
     cancel: &AtomicBool,
     mut found: impl FnMut(Vec<Entry>),
 ) -> Summary {
     let mut summary = Summary {
         volumes: roots.len(),
-        skipped: 0,
+        ..Default::default()
     };
     let mut checked = HashSet::new();
-    let mut probe = |dir: &Path, checked: &mut HashSet<PathBuf>| {
+    let mut probe = |dir: &Path, hint: Source, checked: &mut HashSet<PathBuf>| {
         if excluded.iter().any(|p| dir.starts_with(p)) || !checked.insert(dir.to_owned()) {
             return;
         }
-        let entries = inspect(dir);
+        let entries = inspect_as(dir, hint);
         if !entries.is_empty() {
             found(entries);
         }
     };
-    for dir in quick {
+    for (dir, hint) in quick {
         if cancel.load(Ordering::Relaxed) {
             return summary;
         }
-        probe(&dir, &mut checked);
+        probe(&dir, hint, &mut checked);
     }
     let mut queue: VecDeque<_> = roots.into();
     while let Some(dir) = queue.pop_front() {
@@ -435,7 +456,7 @@ fn walk(
             }
             let name = entry.file_name().to_string_lossy().to_lowercase();
             if name == "versions" {
-                probe(&dir, &mut checked);
+                probe(&dir, Source::Auto, &mut checked);
             } else if !ignore(&name)
                 && !(checked.contains(&dir)
                     && matches!(
@@ -453,20 +474,100 @@ fn walk(
 pub fn discover(
     manual: Option<PathBuf>,
     cancel: &AtomicBool,
+    found: impl FnMut(Vec<Entry>),
+) -> Summary {
+    discover_for(manual, Source::Auto, true, cancel, found)
+}
+
+fn selected_root(path: &Path) -> &Path {
+    let versions = if path
+        .file_name()
+        .is_some_and(|n| n.eq_ignore_ascii_case("versions"))
+    {
+        Some(path)
+    } else {
+        path.parent().filter(|p| {
+            p.file_name()
+                .is_some_and(|n| n.eq_ignore_ascii_case("versions"))
+        })
+    };
+    versions.and_then(Path::parent).unwrap_or(path)
+}
+
+fn quick_locations(base: &Path) -> Vec<(PathBuf, Source)> {
+    let tl = base.join(".tlauncher");
+    let default = base.join(".minecraft");
+    let mut paths = Vec::new();
+    let mut configured = None;
+    // Read only the game directory setting. Do not use account files or launcher arguments.
+    for config in [
+        tl.join("tlauncher-2.0.properties"),
+        default.join("tlauncher-2.0.properties"),
+    ] {
+        if !regular(&config) {
+            continue;
+        }
+        let mut text = String::new();
+        if fs::File::open(config)
+            .and_then(|f| f.take(512 * 1024).read_to_string(&mut text))
+            .is_err()
+        {
+            continue;
+        }
+        if let Some(value) = text
+            .lines()
+            .filter_map(|l| l.trim().split_once('='))
+            .find_map(|(k, v)| (k.trim() == "minecraft.gamedir").then(|| v.trim()))
+        {
+            let path = PathBuf::from(value.replace(r"\:", ":").replace(r"\\", r"\"));
+            if path.is_absolute() {
+                if directory(&path) {
+                    paths.push((path.clone(), Source::Tlauncher));
+                }
+                configured = Some(path);
+                break;
+            }
+        }
+    }
+    let shared = configured.as_ref().is_none_or(|path| *path == default)
+        && (directory(&tl) || regular(&default.join("tlauncher-2.0.properties")));
+    paths.push((
+        default,
+        if shared {
+            Source::Tlauncher
+        } else {
+            Source::Auto
+        },
+    ));
+    paths.push((tl, Source::Tlauncher));
+    paths
+}
+
+pub fn discover_for(
+    manual: Option<PathBuf>,
+    source: Source,
+    all_drives: bool,
+    cancel: &AtomicBool,
     mut found: impl FnMut(Vec<Entry>),
 ) -> Summary {
     if let Some(path) = manual {
-        let rows = inspect(&path);
-        if !rows.is_empty() {
-            found(rows);
+        if !cancel.load(Ordering::Relaxed) {
+            let rows = inspect_as(selected_root(&path), source);
+            if !rows.is_empty() {
+                found(rows);
+            }
         }
         return Summary::default();
     }
-    let roots = volumes();
+    let roots = if all_drives { volumes() } else { Vec::new() };
     let quick = dirs::data_dir()
         .into_iter()
-        .flat_map(|p| [p.join(".minecraft"), p.join(".tlauncher")])
-        .chain(dirs::home_dir().map(|h| h.join(".minecraft")))
+        .flat_map(|base| quick_locations(&base))
+        .chain(
+            dirs::home_dir()
+                .into_iter()
+                .flat_map(|base| quick_locations(&base)),
+        )
         .collect();
     walk(
         roots,
@@ -520,7 +621,10 @@ pub fn import(entry: &Entry) -> Result<instances::Instance, String> {
         return Err(crate::i18n::tr("Unsupported local profile").into());
     }
     let catalog = minecraft_versions::load()?;
-    let version = catalog.find(&entry.minecraft)?;
+    let version = catalog.find(&entry.minecraft).map_err(|_| crate::i18n::trf(
+        "Mojang does not list {version}. Open this profile in its original launcher or download an official version with BODKA.",
+        &[("version", &entry.minecraft)],
+    ))?;
     let loader = entry
         .loader
         .as_ref()

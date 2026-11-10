@@ -54,7 +54,7 @@ fn multiple_volumes_stream_shared_roots_once_and_keep_modpacks_separate() {
     let mut rows = Vec::new();
     let summary = walk(
         vec![first, second],
-        vec![shared.clone()],
+        vec![(shared.clone(), Source::Auto)],
         &[],
         &AtomicBool::new(false),
         |v| rows.extend(v),
@@ -117,7 +117,7 @@ fn excludes_managed_trees_and_cancels_discovery() {
     for (stop, exclusions) in [(true, vec![]), (false, vec![root.clone()])] {
         walk(
             vec![t.0.clone()],
-            vec![root.clone()],
+            vec![(root.clone(), Source::Auto)],
             &exclusions,
             &AtomicBool::new(stop),
             |_| panic!("unexpected match"),
@@ -156,4 +156,93 @@ fn repair_restores_only_missing_mods_whose_fingerprint_matches() {
     fs::write(source.join("mods/pack.jar"), b"changed original").unwrap();
     assert!(repair_mods(&managed).is_err());
     assert!(!target.exists());
+}
+
+#[test]
+fn quick_scan_uses_the_configured_tlauncher_game_directory() {
+    let t = Scratch::new("configured-tl");
+    let config = t.0.join(".tlauncher");
+    let custom = t.0.join("custom games");
+    fs::create_dir_all(&config).unwrap();
+    version(&custom, "1.20.1", json!({"id":"1.20.1"}));
+    let escaped = custom
+        .to_string_lossy()
+        .replace('\\', "\\\\")
+        .replace(':', "\\:");
+    fs::write(
+        config.join("tlauncher-2.0.properties"),
+        format!("minecraft.gamedir={escaped}\n"),
+    )
+    .unwrap();
+    version(&t.0.join(".minecraft"), "1.21", json!({"id":"1.21"}));
+    let mut entries = Vec::new();
+    let summary = walk(
+        vec![],
+        quick_locations(&t.0),
+        &[],
+        &AtomicBool::new(false),
+        |v| entries.extend(v),
+    );
+    assert_eq!(summary.volumes, 0);
+    assert_eq!(entries.len(), 2);
+    assert!(entries
+        .iter()
+        .any(|e| e.tlauncher && e.minecraft == "1.20.1"));
+    assert!(entries
+        .iter()
+        .any(|e| !e.tlauncher && e.official && e.minecraft == "1.21"));
+}
+
+#[test]
+fn selected_tlauncher_source_accepts_portable_and_nested_version_folders() {
+    let t = Scratch::new("portable");
+    let root = t.0.join("my folder");
+    version(
+        &root,
+        "my-forge",
+        json!({"id":"my-forge","clientVersion":"1.20.1","libraries":[{"name":"net.minecraftforge:forge:1.20.1-47.2.0"}]}),
+    );
+    for folder in [
+        &root,
+        &root.join("versions"),
+        &root.join("versions/my-forge"),
+    ] {
+        let mut rows = Vec::new();
+        discover_for(
+            Some(folder.clone()),
+            Source::Tlauncher,
+            false,
+            &AtomicBool::new(false),
+            |v| rows.extend(v),
+        );
+        assert_eq!(rows.len(), 1);
+        let e = &rows[0];
+        assert!(e.supported && e.matches(Source::Tlauncher));
+        assert_eq!(e.minecraft, "1.20.1");
+        assert_eq!(e.loader.as_ref().unwrap().version, "47.2.0");
+    }
+    discover_for(
+        Some(t.0.join("missing")),
+        Source::Official,
+        false,
+        &AtomicBool::new(false),
+        |_| panic!("unexpected version"),
+    );
+}
+
+#[test]
+fn flattened_forge_and_renamed_tlauncher_profiles_keep_their_real_version() {
+    let t = Scratch::new("flattened");
+    let root = t.0.join("TLauncher");
+    version(
+        &root,
+        "My Forge Pack",
+        json!({"id":"forge-local","libraries":[{"name":"net.minecraftforge:forge:1.20.1-47.2.0"}]}),
+    );
+    let entries = inspect(&root);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].name, "My Forge Pack");
+    assert_eq!(entries[0].minecraft, "1.20.1");
+    assert_eq!(entries[0].loader.as_ref().unwrap().version, "47.2.0");
+    assert!(entries[0].supported);
 }

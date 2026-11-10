@@ -235,6 +235,27 @@ impl Launcher {
         )
     }
 
+    pub(super) fn direct_install_form(&mut self, cx: &mut Context<Self>) -> Stateful<Div> {
+        let d = self.instances.dialog.as_ref().expect("download dialog");
+        let busy = d.busy;
+        let error = d.error.clone();
+        let versions = self.minecraft_versions(cx);
+        let foot = self.instance_foot(None, false, busy, error, cx);
+        div().id("instance-dialog").absolute().inset_0().occlude()
+            .flex().items_center().justify_center().p(px(16.))
+            .bg(ui::scrim()).on_scroll(|_, _, cx| cx.stop_propagation())
+            .child(ui::dialog_plate(radius::MODAL).id("direct-download-card").bg(self.theme.side.opacity(0.96))
+                .flex().flex_col().w_full().max_w(px(680.)).max_h_full().overflow_hidden()
+                .child(div().id("direct-download-scroll").min_h_0().overflow_y_scroll()
+                    .flex().flex_col().p(px(24.)).gap(px(14.))
+                    .when(i18n::is_rtl(), |d| d.text_right())
+                    .child(ui::text(27., FontWeight::BOLD, 1.).child(tr("Download Minecraft")))
+                    .child(ui::text(14., FontWeight::NORMAL, 0.86)
+                        .child(tr("The latest release is selected. BODKA installs Minecraft and the required Java after you link an account that owns the game.")))
+                    .child(versions))
+                .child(foot))
+    }
+
     fn library_form(&mut self, cx: &mut Context<Self>) -> Stateful<Div> {
         let t = self.theme;
         let d = self.instances.dialog.as_ref().expect("open library form");
@@ -878,7 +899,9 @@ impl Launcher {
         cx: &mut Context<Self>,
     ) -> Div {
         let t = self.theme;
+        let direct = self.instances.dialog.as_ref().is_some_and(|d| d.direct_install);
         let place = match editing {
+            None if direct => self.draft_minecraft().unwrap_or_default(),
             Some(i) => short(&i.home),
             None => trf(
                 "Makes a folder in {path}",
@@ -904,6 +927,7 @@ impl Launcher {
         );
         let label = match (editing.is_some(), busy) {
             (true, _) => tr("Save changes"),
+            (false, _) if direct => tr("Download and install"),
             (false, true) if copy => tr("Copying…"),
             (false, _) => tr("Create instance"),
         };
@@ -928,6 +952,8 @@ impl Launcher {
                 .child(label),
             &t,
         );
+        let requires_version = direct
+            && !matches!(&self.instances.versions, VersionList::Ready(v) if v.find("latest").is_ok());
         let buttons = if busy {
             div()
                 .flex()
@@ -943,10 +969,14 @@ impl Launcher {
                     this.instances.dialog = None;
                     cx.notify();
                 })))
-                .child(save.on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
-                    this.save_instance(cx);
-                    cx.notify();
-                })))
+                .child(if requires_version {
+                    save.opacity(0.45).cursor_default()
+                } else {
+                    save.on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                        this.save_instance(cx);
+                        cx.notify();
+                    }))
+                })
         };
         div()
             .flex()

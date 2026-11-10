@@ -257,12 +257,16 @@ pub fn backdrop(kind: Kind, radius: f32) -> AnyElement {
         .size_full();
         let edge = div()
             .absolute()
+            .top_0()
+            .left_0()
             .size_full()
             .rounded(px(radius))
             .border_1()
             .border_color(rgb(palette.ink).opacity(0.12));
         return div()
             .absolute()
+            .top_0()
+            .left_0()
             .size_full()
             .rounded(px(radius))
             .when(kind == Kind::Float && radius > 0., |d| {

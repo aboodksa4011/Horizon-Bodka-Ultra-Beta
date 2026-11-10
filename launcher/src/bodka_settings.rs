@@ -148,6 +148,8 @@ pub struct Settings {
     pub volume: u8,
     pub soft_sound: bool,
     pub opening_seen: bool,
+    #[serde(default)]
+    pub play_setup_seen: bool,
     pub sunset_background: bool,
 }
 impl Default for Settings {
@@ -168,6 +170,7 @@ impl Default for Settings {
             volume: 25,
             soft_sound: true,
             opening_seen: false,
+            play_setup_seen: false,
             sunset_background: true,
         }
     }

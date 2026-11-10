@@ -31,6 +31,7 @@ impl Launcher {
             (Page::Play, "Play game", "play"),
             (Page::Versions, "Versions", "archive"),
             (Page::Dual, "BODKA Dual Launcher", "package"),
+            (Page::StartGuide, "Play setup and requirements", "computer"),
             (Page::Downloads, "Downloads", "download-04"),
             (Page::Worlds, "Worlds", "globe-02"),
             (Page::Mods, "Mods", "package"),
@@ -158,7 +159,6 @@ impl Launcher {
                     .p(px(16.))
                     .border_t_1()
                     .border_color(t.accent.opacity(0.15))
-                    .when(self.owner != Some(true), |d| d.child(crate::classic_game::button("sidebar-classic", &t, cx)))
                     .child(
                         text(
                             if self.owner == Some(true) {

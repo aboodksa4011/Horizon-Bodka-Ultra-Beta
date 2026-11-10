@@ -45,6 +45,7 @@ const COLOURS: [&str; 8] = [
 /// The dialog: a new instance (`editing` None) or one being changed. Its name and group are the
 /// text fields `Field::InstanceName` and `Field::InstanceGroup`.
 pub(super) struct InstanceDialog {
+    pub(super) direct_install: bool,
     pub(super) editing: Option<String>,
     /// A new instance copies the selected one's worlds, options and packs.
     pub(super) copy: bool,
@@ -311,6 +312,7 @@ impl Launcher {
             },
         };
         self.instances.dialog = Some(InstanceDialog {
+            direct_install: false,
             icon: editing.as_ref().and_then(|i| i.icon.clone()),
             pin: editing.as_ref().and_then(|i| i.version.clone()),
             logo: None,
@@ -328,6 +330,17 @@ impl Launcher {
         if !editing_one {
             self.change(|_| {});
         }
+    }
+
+    pub(super) fn open_java_library(&mut self, cx: &mut Context<Self>) {
+        self.open_instance_dialog(None);
+        self.pick_kind(new_instance::NewKind::Vanilla, cx);
+    }
+
+    pub(super) fn open_direct_install(&mut self, cx: &mut Context<Self>) {
+        self.open_java_library(cx);
+        self.instances.dialog.as_mut().unwrap().direct_install = true;
+        self.servers.focus_soon = None;
     }
 
     /// Opens the dialog for a copy of the selected instance, named after it.
@@ -386,6 +399,7 @@ impl Launcher {
             .map(|p| p.as_ref().map(|c| c.png.clone()));
         let editing = d.editing.clone();
         let edited = editing.is_some();
+        let direct_install = d.direct_install;
         let memory_mb = d.memory_mb;
         let copy = selected.filter(|_| d.copy);
         // The Horizon version is Horizon's instances' alone: a Java one plays its own game.
@@ -471,7 +485,10 @@ impl Launcher {
                         if let Some(release) = download {
                             this.install_for_instance(release);
                         }
-                        if !edited && this.page == Page::Dashboard {
+                        if direct_install {
+                            this.go(Page::Dashboard);
+                            this.request_java_action(&instance, libraries::JavaAction::Download);
+                        } else if !edited && this.page == Page::Dashboard {
                             this.prepare_new_library(&instance, cx);
                         } else if this.page != Page::Library
                             && matches!(instance.kind, InstanceKind::Default | InstanceKind::Own)
@@ -494,6 +511,14 @@ impl Launcher {
 
     pub(super) fn instance_dialog(&mut self, cx: &mut Context<Self>) -> Option<Stateful<Div>> {
         let t = self.theme;
+        if self
+            .instances
+            .dialog
+            .as_ref()
+            .is_some_and(|d| d.direct_install)
+        {
+            return Some(self.direct_install_form(cx));
+        }
         if t.glass
             || (self.page == Page::Dashboard
                 && self

@@ -6,7 +6,6 @@
 mod agents_page;
 mod art;
 mod blocks;
-mod classic_game;
 mod bodka;
 mod libraries;
 mod cli;
@@ -18,6 +17,7 @@ mod cull;
 mod datapacks_page;
 mod dev_options;
 mod dual_page;
+mod play_setup;
 mod export_page;
 mod frame;
 mod game_tools;
@@ -114,6 +114,7 @@ use theme::Theme;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Page {
+    StartGuide,
     Dashboard,
     Library,
     Dual,
@@ -149,6 +150,7 @@ impl Page {
             Ok("wardrobe") if horizon_cosmetics::forced() => Page::Wardrobe,
             Ok("shop") if horizon_cosmetics::forced() => Page::Shop,
             Ok("library" | "instance-mods" | "worlds" | "multiplayer" | "packs" | "screenshots" | "console") => Page::Library,
+            Ok("start-guide") => Page::StartGuide,
             Ok("dual") => Page::Dual,
             Ok("versions") => Page::Versions,
             Ok("notes") => Page::Notes,
@@ -417,6 +419,7 @@ struct Launcher {
     owner: Option<bool>,
     /// Play was refused (or Home's Sign in pressed): the owner gate's screen is open.
     owner_screen_open: bool,
+    signup_from_guide: bool,
     /// Clicks on the sidebar's launcher version, and whether they revealed the developer options
     /// (`dev_options`) for this run.
     dev_clicks: u8,
@@ -618,7 +621,7 @@ impl Launcher {
             theme: Theme::for_appearance(settings.appearance, settings.accent, window.appearance())
                 .with_glass(settings.glass_tint(), settings.glass_blur())
                 .with_bodka(settings.bodka.theme),
-            page: Page::from_env(),
+            page: play_setup::initial_page(Page::from_env(), settings.bodka.play_setup_seen, std::env::var_os("HORIZON_LAUNCHER_PAGE").is_some()),
             switches: 0,
             pending_page: None,
             previous_page: None,
@@ -735,6 +738,7 @@ impl Launcher {
             keychain: None,
             owner: None,
             owner_screen_open: false,
+            signup_from_guide: false,
             dev_clicks: 0,
             dev_options: false,
             starting_client: None,
@@ -1175,7 +1179,14 @@ impl Launcher {
                 Msg::DualScanned(g, summary) => self.dual_scanned(g,summary),
                 Msg::DualImported(origin, result) => self.dual_imported(origin,result),
                 Msg::LibraryProgress(id, line) => self.library.progress(id, line),
-                Msg::LibraryPrepared(id, result) => self.library.finished(id, result),
+                Msg::LibraryPrepared(id, result) => {
+                    if result.as_ref().err() == Some(&account::NoOwner.to_string()) {
+                        self.owner = Some(false);
+                        self.owner_screen_open = true;
+                        self.library.needs_link(id.clone(), libraries::JavaAction::Download);
+                    }
+                    self.library.finished(id, result);
+                }
                 Msg::DualRepairLine(line) => self.dual_repair_line(line),
                 Msg::DualRepaired(result) => self.dual_repaired(result),
                 Msg::Releases(r) => {
@@ -1239,6 +1250,7 @@ impl Launcher {
                 Msg::Playing(playing) => self.playing = playing,
                 Msg::OfficialPlayers(players) => self.official_players = players,
                 Msg::JavaGame(id, home, cmd) => {
+                    let requested_play = self.library.take_requested_play(&id);
                     self.starting_client = None;
                     let spawned = cmd.and_then(|(cmd, vars)| {
                         self.client_vars = vars;
@@ -1254,6 +1266,7 @@ impl Launcher {
                         }
                         Err(e) => {
                             if e == account::NoOwner.to_string() {
+                                if let Some(action) = requested_play { self.library.needs_link(id, action); }
                                 self.owner = Some(false);
                                 self.owner_screen_open = true;
                                 self.client_error = Some(account::NoOwner::in_window());
@@ -1636,7 +1649,6 @@ impl Launcher {
                     self.load_auth_statuses(false);
                     // Sign-in refuses accounts that don't own the game.
                     self.owner = Some(true);
-                    if let Some(id)=self.library.signed_in() {if let Some(i)=self.instances.list.iter().find(|i|i.id==id).cloned(){self.prepare_new_library(&i,cx);}}
                     self.owner_screen_open = false;
                     self.client_error = None;
                     if !self.settings.owner_notice_seen {
@@ -1646,6 +1658,9 @@ impl Launcher {
                 }
                 changed = true;
             }
+        }
+        if self.signup_from_guide {
+            changed |= self.advance_guide_sign_in(cx);
         }
         if self
             .checked
@@ -1868,11 +1883,12 @@ impl Launcher {
                 return;
             }
             self.starting_pack = None;
-            match destination {
-                Some(("--world",folder))=>self.start_java_at(instance,None,Some(folder)),
-                Some(("--server",address))=>self.start_java(instance,Some(address)),
-                _=>self.start_java(instance,None),
-            }
+            let action = match destination {
+                Some(("--world", folder)) => libraries::JavaAction::World(folder),
+                Some(("--server", address)) => libraries::JavaAction::Server(address),
+                _ => libraries::JavaAction::Play,
+            };
+            self.request_java_action(&instance, action);
             return;
         }
         let Some(tag) = self.selected().cloned() else {
@@ -1902,10 +1918,6 @@ impl Launcher {
     /// Starts a Java instance's Minecraft, joining `server` if given: its files and Java first
     /// (downloaded the first time, their lines in the log), then `drain` starts the game when
     /// the command arrives.
-    fn start_java(&mut self, instance: instances::Instance, server: Option<String>) {
-        self.start_java_at(instance,server,None);
-    }
-
     fn start_java_at(&mut self, instance: instances::Instance, server: Option<String>, world:Option<String>) {
         self.library.begin_game(&instance.id,server.as_deref());
         self.client_error = None;
@@ -3429,11 +3441,12 @@ impl Launcher {
         let t = self.theme;
         // A Java instance plays Mojang's game: no Horizon version, nothing of Horizon's to prepare.
         let java = self.selected_instance().and_then(|i| i.java.clone());
-        let Some(tag) = self
-            .selected()
-            .cloned()
-            .or_else(|| java.is_some().then(String::new))
-        else {
+        let horizon_tag = if java.is_some() {
+            Some(String::new())
+        } else {
+            self.selected().cloned()
+        };
+        let Some(tag) = horizon_tag else {
             // No hero without a version: the page starts below the top bar like the others.
             let memory = self.memory_row(cx);
             // The first version, downloading since an instance was made to play it.
@@ -3461,7 +3474,7 @@ impl Launcher {
                 ))
                 .children(memory);
         };
-        let prepared = backend::is_prepared(&tag);
+        let prepared = !tag.is_empty() && backend::is_prepared(&tag);
         // Prepared without sounds (#1035): Prepare again is the fix, so it stands out.
         let silent = prepared && !backend::has_sounds(&tag);
         let version = java
@@ -5458,6 +5471,7 @@ impl Render for Launcher {
         self.window_long_side = f32::from(size.width).max(f32::from(size.height));
         self.scale_factor = window.scale_factor();
         let content = match self.page {
+            Page::StartGuide => self.play_setup_page(cx),
             Page::Dashboard => self.library_home(cx),
             Page::Library => self.library_editor(cx),
             Page::Dual => self.dual_page(cx),
